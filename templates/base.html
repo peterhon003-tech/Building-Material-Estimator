@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}防火板計價系統{% endblock %}</title>
+  <style>
+    :root { --ink:#1f2328; --muted:#5f6b76; --line:#d8dee4; --bg:#f6f8fa; --accent:#b4441c; --ok:#1a7f37; --warn:#9a6700; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: "Microsoft JhengHei", "PingFang HK", "Noto Sans TC", system-ui, sans-serif; color:var(--ink); background:#fff; line-height:1.6; }
+    header { background:#24292f; color:#fff; }
+    header .wrap { display:flex; align-items:center; gap:24px; height:56px; }
+    header a { color:#fff; text-decoration:none; }
+    header .brand { font-weight:600; font-size:17px; }
+    header nav { display:flex; gap:16px; flex:1; }
+    header nav a { opacity:.8; } header nav a:hover, header nav a.on { opacity:1; text-decoration:underline; }
+    header form { margin:0; } header button { background:none; border:1px solid #57606a; color:#fff; padding:4px 10px; border-radius:6px; cursor:pointer; }
+    .wrap { max-width:1150px; margin:0 auto; padding:0 20px; }
+    main { padding:24px 0 48px; }
+    h1 { font-size:22px; margin:0 0 16px; }
+    h2 { font-size:18px; margin:24px 0 8px; }
+    .card { border:1px solid var(--line); border-radius:8px; padding:16px 20px; background:#fff; margin-bottom:16px; }
+    .muted { color:var(--muted); font-size:14px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { padding:8px 10px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { background:var(--bg); font-weight:600; white-space:nowrap; }
+    td.num, th.num { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+    tfoot td { font-weight:700; font-size:15px; background:var(--bg); }
+    .pending { color:var(--warn); }
+    .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; background:var(--bg); border:1px solid var(--line); }
+    select, input { font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px; }
+    .btn { display:inline-block; background:var(--accent); color:#fff; border:0; border-radius:6px; padding:7px 16px; font:inherit; cursor:pointer; text-decoration:none; }
+    .btn.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+    .row { display:flex; gap:16px; flex-wrap:wrap; align-items:end; }
+    .row label { display:flex; flex-direction:column; font-size:14px; gap:4px; }
+    .msg { padding:10px 14px; border-radius:6px; margin-bottom:16px; background:#dafbe1; color:var(--ok); }
+    .warnbox { padding:10px 14px; border-radius:6px; background:#fff8c5; color:#7d4e00; margin-top:12px; font-size:14px; }
+    .errorlist { color:#cf222e; margin:4px 0; padding-left:18px; font-size:13px; }
+    a { color:#0969da; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="brand" href="{% url 'calculator' %}">防火板計價系統</a>
+    {% if user.is_authenticated %}
+    <nav>
+      <a href="{% url 'calculator' %}" class="{% if request.resolver_match.url_name == 'calculator' %}on{% endif %}">計價</a>
+      <a href="{% url 'price_list' %}" class="{% if 'price' in request.resolver_match.url_name %}on{% endif %}">原料價錢</a>
+      {% if user.is_staff %}<a href="{% url 'admin:index' %}">系統管理</a>{% endif %}
+    </nav>
+    <span class="muted" style="color:#d0d7de">{{ user.get_username }}</span>
+    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">登出</button></form>
+    {% endif %}
+  </div>
+</header>
+<main class="wrap">
+  {% for message in messages %}<div class="msg">{{ message }}</div>{% endfor %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

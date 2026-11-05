@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}更新價錢 · {{ material }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'price_list' %}">← 返回原料價錢</a></p>
+<h1>更新價錢：{{ material }}</h1>
+<p class="muted">
+  {% if current %}現時價錢：${{ current.unit_price|floatformat:2 }} / {{ material.unit }}（{{ current.supplier }}，{{ current.effective_date|date:"Y-m-d" }} 起生效）
+  {% else %}此材料未有價錢。{% endif %}
+</p>
+
+<form method="post" class="card" style="max-width:520px">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for field in form %}
+  <p>
+    <label>{{ field.label }}{% if field.name == "unit_price" %}（每{{ material.unit }}）{% endif %}<br>{{ field }}</label>
+    {{ field.errors }}
+  </p>
+  {% endfor %}
+  <p class="muted">儲存後會新增一條價錢紀錄，舊價錢不會被刪除。生效日期是今日或之前的價錢會即時用於計價。</p>
+  <button class="btn" type="submit">儲存</button>
+  <a class="btn secondary" href="{% url 'price_list' %}">取消</a>
+</form>
+{% endblock %}
