@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}計價 · 防火板計價系統{% endblock %}
+{% block content %}
+<h1>每 m² 材料及價錢</h1>
+
+<form method="get" class="card" id="calc-form">
+  <div class="row">
+    <label>1. 品牌
+      <select name="brand" id="brand" required>
+        <option value="">請選擇</option>
+        {% for v, label in brands %}<option value="{{ v }}" {% if selected.brand == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>2. 系統
+      <select name="system_type" id="system_type" required>
+        <option value="">請選擇</option>
+        {% for v, label in types %}<option value="{{ v }}" {% if selected.system_type == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>3. 耐火時間
+      <select name="hours" id="hours" required>
+        <option value="">請選擇</option>
+        {% for v, label in hours_choices %}<option value="{{ v }}" data-label="{{ label }}" {% if selected.hours == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">計算</button>
+  </div>
+  <p class="muted" style="margin:10px 0 0">未有數據的組合會顯示「尚未提供」，不能選擇。</p>
+</form>
+
+{% if not_available %}
+  <div class="warnbox">此組合尚未提供，請選擇其他選項。</div>
+{% endif %}
+
+{% if result %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+    <h2 style="margin:0">{{ result.system }}</h2>
+    <a class="btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">匯出 Excel</a>
+  </div>
+  <p class="muted" style="margin:0">
+    F.R.R. {{ result.system.frr_label }} ·
+    測試報告 {{ result.system.report_no }} ·
+    系統總厚度 {{ result.system.overall_thickness_mm }}mm ·
+    價錢日期 {{ result.on_date|date:"Y-m-d" }}<br>
+    圖則：{{ result.system.drawing_ref }}
+  </p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>項目</th><th>材料 / 規格</th><th>計算方式</th>
+      <th class="num">每 m² 用量</th><th>單位</th><th class="num">單價 (HK$)</th><th class="num">每 m² 價錢 (HK$)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in result.lines %}
+    <tr{% if l.pending %} class="pending"{% endif %}>
+      <td>{{ l.item_no }}</td>
+      <td>{{ l.description }}{% if l.note %}<br><span class="muted">{{ l.note }}</span>{% endif %}</td>
+      <td>{{ l.material }}</td>
+      <td>{{ l.method }}<br><span class="muted">{{ l.basis }}</span></td>
+      <td class="num">{% if l.qty is not None %}{{ l.qty|floatformat:4 }}{% else %}待定{% endif %}</td>
+      <td>{{ l.unit }}</td>
+      <td class="num">{% if l.unit_price is not None %}{{ l.unit_price|floatformat:2 }}<br><span class="muted">{{ l.supplier }} {{ l.price_date|date:"Y-m-d" }}</span>{% else %}待提供{% endif %}</td>
+      <td class="num">{% if l.cost is not None %}{{ l.cost|floatformat:2 }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr><td colspan="7">每 m² 合計（已計項目）</td><td class="num">{{ result.total|floatformat:2 }}</td></tr>
+  </tfoot>
+</table>
+
+{% if result.pending_lines %}
+<div class="warnbox">
+  以下 {{ result.pending_lines|length }} 項未計入合計（用量或價錢待定）：
+  {% for l in result.pending_lines %}{{ l.item_no }}. {{ l.description }}{% if not forloop.last %}、{% endif %}{% endfor %}。
+  用量由系統管理員在「系統管理」設定，價錢可在「原料價錢」頁更新。
+</div>
+{% endif %}
+{% endif %}
+
+{{ availability|json_script:"availability" }}
+<script>
+(function () {
+  const avail = JSON.parse(document.getElementById("availability").textContent);
+  const brand = document.getElementById("brand");
+  const type = document.getElementById("system_type");
+  const hours = document.getElementById("hours");
+
+  function refresh() {
+    const byType = avail[brand.value] || {};
+    for (const opt of type.options) {
+      if (!opt.value) continue;
+      const ok = !brand.value || (byType[opt.value] || []).length > 0;
+      opt.disabled = !ok;
+      opt.textContent = opt.textContent.replace(" （尚未提供）", "") + (ok ? "" : " （尚未提供）");
+      if (!ok && opt.selected) type.value = "";
+    }
+    const list = (byType[type.value] || []).map(String);
+    for (const opt of hours.options) {
+      if (!opt.value) continue;
+      const ok = !brand.value || !type.value || list.includes(opt.value);
+      opt.disabled = !ok;
+      opt.textContent = opt.dataset.label + (ok ? "" : " （尚未提供）");
+      if (!ok && opt.selected) hours.value = "";
+    }
+  }
+  brand.addEventListener("change", refresh);
+  type.addEventListener("change", refresh);
+  refresh();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}原料價錢 · 防火板計價系統{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+  <h1 style="margin:0">原料價錢</h1>
+  <div style="display:flex; gap:8px">
+    {% if can_edit %}<a class="btn secondary" href="{% url 'price_import' %}">Excel 批量更新</a>{% endif %}
+    {% if can_add_material %}<a class="btn" href="{% url 'material_add' %}">新增材料</a>{% endif %}
+  </div>
+</div>
+<p class="muted">顯示今日已生效的最新價錢。{% if can_edit %}按「更新」輸入新價錢，舊價錢會保留在紀錄中。{% else %}你只有查看權限，如需更新價錢請聯絡管理員。{% endif %}</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>類別</th><th>編號</th><th>名稱</th><th>規格</th><th>單位</th>
+      <th class="num">單價 (HK$)</th><th>供應商</th><th>生效日期</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr{% if not r.price %} class="pending"{% endif %}>
+      <td><span class="tag">{{ r.material.get_category_display }}</span></td>
+      <td>{{ r.material.code }}</td>
+      <td>{{ r.material.name }}</td>
+      <td>{{ r.material.spec }}</td>
+      <td>{{ r.material.unit }}</td>
+      <td class="num">{% if r.price %}{{ r.price.unit_price|floatformat:2 }}{% else %}待提供{% endif %}</td>
+      <td>{{ r.price.supplier|default:"" }}</td>
+      <td>{{ r.price.effective_date|date:"Y-m-d"|default:"" }}</td>
+      <td style="white-space:nowrap">
+        <a href="{% url 'price_history' r.material.pk %}">紀錄</a>
+        {% if can_edit %} · <a href="{% url 'price_add' r.material.pk %}">更新</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

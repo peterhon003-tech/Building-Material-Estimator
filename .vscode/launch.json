@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Django：運行網站（SQLite）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["runserver", "127.0.0.1:8001", "--noreload"],
+      "django": true,
+      "justMyCode": true,
+      "env": { "DJANGO_DEBUG": "1" }
+    },
+    {
+      "name": "Django：運行網站（Docker PostgreSQL）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["runserver", "127.0.0.1:8001", "--noreload"],
+      "django": true,
+      "justMyCode": true,
+      "envFile": "${workspaceFolder}/.env.dev"
+    },
+    {
+      "name": "Django：執行測試",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["test", "estimator", "-v", "2"],
+      "django": true,
+      "justMyCode": true,
+      "env": { "DJANGO_DEBUG": "1" }
+    },
+    {
+      "name": "Django：載入初始數據（SQLite）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/manage.py",
+      "args": ["seed_data"],
+      "django": true,
+      "env": { "DJANGO_DEBUG": "1" }
+    }
+  ]
+}

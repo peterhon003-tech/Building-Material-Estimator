@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}新增材料 · 防火板計價系統{% endblock %}
+{% block content %}
+<p><a href="{% url 'price_list' %}">← 返回原料價錢</a></p>
+<h1>新增材料</h1>
+<p class="muted">新材料加入後會出現在原料價錢頁。若要用於計價，需由系統管理員加入系統配方。</p>
+
+<form method="post" class="card" style="max-width:620px">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <h2 style="margin-top:0">材料資料</h2>
+  {% for field in form %}
+    {% if field.name == "unit_price" %}<h2>第一個價錢（可選）</h2>{% endif %}
+    <p>
+      <label>{{ field.label }}{% if field.field.required %} *{% endif %}<br>{{ field }}</label>
+      {% if field.help_text %}<br><span class="muted">{{ field.help_text }}</span>{% endif %}
+      {{ field.errors }}
+    </p>
+  {% endfor %}
+  <button class="btn" type="submit">新增</button>
+  <a class="btn secondary" href="{% url 'price_list' %}">取消</a>
+</form>
+{% endblock %}

@@ -1,0 +1,8 @@
+# 開發用：把 Docker 內的 PostgreSQL 開放給本機（只限 127.0.0.1:5433），
+# 讓 VS Code 直接連接 Docker 的數據庫除錯。正式伺服器不要使用此檔。
+#
+# 使用：docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db
+services:
+  db:
+    ports:
+      - "127.0.0.1:5433:5432"

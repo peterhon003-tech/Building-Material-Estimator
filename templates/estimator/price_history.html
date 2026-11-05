@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}價錢紀錄 · {{ material }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'price_list' %}">← 返回原料價錢</a></p>
+<h1>價錢紀錄：{{ material }}</h1>
+<p class="muted">編號 {{ material.code }} · 單位 {{ material.unit }}
+  {% if can_edit %} · <a href="{% url 'price_add' material.pk %}">更新價錢</a>{% endif %}</p>
+
+<table>
+  <thead>
+    <tr><th>生效日期</th><th class="num">單價 (HK$)</th><th>供應商</th><th>備註</th><th>修改人</th><th>輸入時間</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for p in prices %}
+    <tr>
+      <td>{{ p.effective_date|date:"Y-m-d" }}</td>
+      <td class="num">{{ p.unit_price|floatformat:2 }}</td>
+      <td>{{ p.supplier }}</td>
+      <td>{{ p.note }}</td>
+      <td>{{ p.updated_by }}</td>
+      <td>{{ p.created_at|date:"Y-m-d H:i" }}</td>
+      <td>{% if current and p.pk == current.pk %}<span class="tag">現時使用</span>{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="pending">未有價錢紀錄</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
