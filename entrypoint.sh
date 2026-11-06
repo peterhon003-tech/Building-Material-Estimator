@@ -14,4 +14,10 @@ echo ">> 載入初始數據（只新增，不覆蓋）"
 python manage.py seed_data
 
 echo ">> 啟動網站"
-exec gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3 --access-logfile -
+# gthread：每個 worker 用多個線程處理連線。瀏覽器預先開啟但閒置的連線
+# 不會再佔用整個 worker，避免 WORKER TIMEOUT 和偶發的 Internal Server Error。
+exec gunicorn config.wsgi:application \
+  --bind 0.0.0.0:8000 \
+  --worker-class gthread --workers 2 --threads 4 \
+  --timeout 60 --keep-alive 5 \
+  --access-logfile -
