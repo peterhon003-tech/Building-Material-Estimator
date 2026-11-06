@@ -23,6 +23,15 @@ def can_see_price(user):
     return user.has_perm(PRICE_VIEW_PERM)
 
 
+def show_prices(request):
+    """這次是否顯示價錢。
+
+    沒有價錢權限 → 一定不顯示。
+    有權限 → 預設顯示；用戶選「只看材料」（?view=material）就不顯示。
+    """
+    return can_see_price(request.user) and request.GET.get("view") != "material"
+
+
 @login_required
 def calculator(request):
     brand = request.GET.get("brand", "")
@@ -37,7 +46,7 @@ def calculator(request):
         except ValueError:
             system = None
         if system:
-            result = services.calculate(system, include_prices=can_see_price(request.user))
+            result = services.calculate(system, include_prices=show_prices(request))
         else:
             not_available = True
 
@@ -49,7 +58,9 @@ def calculator(request):
         "availability": services.availability(),
         "result": result,
         "not_available": not_available,
-        "can_see_price": can_see_price(request.user),
+        "can_see_price": show_prices(request),          # 這次是否顯示價錢欄
+        "price_allowed": can_see_price(request.user),   # 是否可以選擇「包括價錢」
+        "view_mode": "material" if request.GET.get("view") == "material" else "price",
     })
 
 
@@ -65,11 +76,12 @@ def calculator_export(request):
     if not system:
         messages.error(request, "請先選擇有效的品牌、系統和耐火時間。")
         return redirect("calculator")
-    show_prices = can_see_price(request.user)
-    result = services.calculate(system, include_prices=show_prices)
-    content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=show_prices)
+    with_prices = show_prices(request)
+    result = services.calculate(system, include_prices=with_prices)
+    content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices)
+    kind = "price" if with_prices else "material"
     filename = (f"{system.brand}-{system.get_system_type_display()}-"
-                f"{system.fire_rating_hours}hr-{result.on_date:%Y-%m-%d}.xlsx")
+                f"{system.fire_rating_hours}hr-{kind}-{result.on_date:%Y-%m-%d}.xlsx")
     resp = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

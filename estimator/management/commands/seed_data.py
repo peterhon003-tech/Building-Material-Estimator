@@ -69,5 +69,6 @@ class Command(BaseCommand):
             group.permissions.add(*Permission.objects.filter(
                 content_type__app_label="estimator", codename__in=perms))
 
-        self.stdout.write(self.style.SUCCESS(
-            f"seed_data 完成：新增材料 {new_m}、價錢 {new_p}、系統 {new_s}"))
+        if options.get("verbosity", 1) > 0:
+            self.stdout.write(self.style.SUCCESS(
+                f"seed_data 完成：新增材料 {new_m}、價錢 {new_p}、系統 {new_s}"))

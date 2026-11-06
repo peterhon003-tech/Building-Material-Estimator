@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}計價 · 防火板計價系統{% endblock %}
 {% block content %}
-<h1>每 m² 材料及價錢</h1>
+<h1>{% if price_allowed %}每 m² 材料及價錢{% else %}每 m² 材料用量{% endif %}</h1>
 
 <form method="get" class="card" id="calc-form">
   <div class="row">
@@ -23,6 +23,17 @@
         {% for v, label in hours_choices %}<option value="{{ v }}" data-label="{{ label }}" {% if selected.hours == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
+    {% if price_allowed %}
+    <fieldset style="border:1px solid var(--line); border-radius:6px; padding:4px 12px; margin:0">
+      <legend class="muted" style="font-size:13px; padding:0 4px">顯示</legend>
+      <label style="flex-direction:row; align-items:center; gap:4px; display:inline-flex">
+        <input type="radio" name="view" value="price" {% if view_mode == "price" %}checked{% endif %}> 包括價錢
+      </label>
+      <label style="flex-direction:row; align-items:center; gap:4px; display:inline-flex; margin-left:12px">
+        <input type="radio" name="view" value="material" {% if view_mode == "material" %}checked{% endif %}> 只看材料
+      </label>
+    </fieldset>
+    {% endif %}
     <button class="btn" type="submit">計算</button>
   </div>
   <p class="muted" style="margin:10px 0 0">未有數據的組合會顯示「尚未提供」，不能選擇。</p>
@@ -36,7 +47,7 @@
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">{{ result.system }}</h2>
-    <a class="btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">匯出 Excel</a>
+    <a class="btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">匯出 Excel{% if can_see_price %}（包括價錢）{% else %}（只有材料）{% endif %}</a>
   </div>
   <p class="muted" style="margin:0">
     F.R.R. {{ result.system.frr_label }} ·
@@ -117,6 +128,14 @@
       if (!ok && opt.selected) hours.value = "";
     }
   }
+  {% if price_allowed %}
+  // 已有結果時，切換顯示選項即時重新計算
+  document.querySelectorAll('input[name="view"]').forEach(function (r) {
+    r.addEventListener("change", function () {
+      if (brand.value && type.value && hours.value) document.getElementById("calc-form").submit();
+    });
+  });
+  {% endif %}
   brand.addEventListener("change", refresh);
   type.addEventListener("change", refresh);
   refresh();

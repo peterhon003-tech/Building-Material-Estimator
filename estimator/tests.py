@@ -268,3 +268,55 @@ class ExportTests(TestCase):
         self.client.force_login(self.user)
         resp = self.client.get(reverse("calculator_export"), {"brand": "DURASTEEL", "system_type": "1", "hours": "2"})
         self.assertEqual(resp.status_code, 302)
+
+
+class ViewModeTests(TestCase):
+    """有價錢權限的用戶可以選「只看材料」；沒有權限的用戶不能用參數取得價錢。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.estimator = User.objects.create_user("vm_est", password="pw-12345-x")
+        cls.estimator.groups.add(Group.objects.get(name="估價員"))
+        cls.plain = User.objects.create_user("vm_plain", password="pw-12345-x")
+        cls.params = {"brand": "PROMAT", "system_type": "1", "hours": "2"}
+
+    def _xlsx_values(self, params):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        resp = self.client.get(reverse("calculator_export"), params)
+        self.assertEqual(resp.status_code, 200)
+        ws = load_workbook(BytesIO(resp.content)).active
+        return [c for row in ws.iter_rows(values_only=True) for c in row if c is not None], resp
+
+    def test_estimator_default_shows_prices_and_option(self):
+        self.client.force_login(self.estimator)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, 'name="view" value="material"')
+        self.assertContains(resp, "174.71")
+        self.assertContains(resp, "匯出 Excel（包括價錢）")
+
+    def test_estimator_material_only_view(self):
+        self.client.force_login(self.estimator)
+        resp = self.client.get(reverse("calculator"), {**self.params, "view": "material"})
+        self.assertContains(resp, "0.3695")
+        self.assertNotContains(resp, "129.33")
+        self.assertNotContains(resp, "單價 (HK$)")
+        self.assertContains(resp, "匯出 Excel（只有材料）")
+
+    def test_estimator_export_follows_choice(self):
+        self.client.force_login(self.estimator)
+        values, resp = self._xlsx_values({**self.params, "view": "material"})
+        self.assertNotIn(129.33, values)
+        self.assertIn("material", resp["Content-Disposition"])
+        values, resp = self._xlsx_values({**self.params, "view": "price"})
+        self.assertIn(129.33, values)
+        self.assertIn("price", resp["Content-Disposition"])
+
+    def test_plain_user_cannot_force_prices(self):
+        self.client.force_login(self.plain)
+        resp = self.client.get(reverse("calculator"), {**self.params, "view": "price"})
+        self.assertNotContains(resp, "129.33")
+        self.assertNotContains(resp, 'type="radio"')      # 沒有「包括價錢 / 只看材料」選項
+        values, _ = self._xlsx_values({**self.params, "view": "price"})
+        self.assertNotIn(129.33, values)
