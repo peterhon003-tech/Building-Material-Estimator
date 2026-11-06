@@ -26,6 +26,10 @@ class Line:
     def pending(self):
         return self.cost is None
 
+    @property
+    def qty_pending(self):
+        return self.qty is None
+
 
 @dataclass
 class Result:
@@ -37,9 +41,17 @@ class Result:
     def total(self):
         return calc.money(sum((l.cost for l in self.lines if l.cost is not None), Decimal("0")))
 
+    include_prices: bool = True
+
     @property
     def pending_lines(self):
+        if not self.include_prices:
+            return self.qty_pending_lines
         return [l for l in self.lines if l.pending]
+
+    @property
+    def qty_pending_lines(self):
+        return [l for l in self.lines if l.qty_pending]
 
 
 def _basis(c, coverage, unit):
@@ -64,10 +76,14 @@ def find_system(brand, system_type, hours):
     )
 
 
-def calculate(system, on_date=None):
-    """計算一個系統每 m² 的材料用量和價錢。"""
+def calculate(system, on_date=None, include_prices=True):
+    """計算一個系統每 m² 的材料用量和價錢。
+
+    include_prices=False：只計用量，完全不讀取價錢（給沒有價錢權限的用戶），
+    所以價錢資料不會傳到網頁或 Excel。
+    """
     on_date = on_date or date.today()
-    result = Result(system=system, on_date=on_date)
+    result = Result(system=system, on_date=on_date, include_prices=include_prices)
 
     for c in system.components.select_related("material").all():
         m = c.material
@@ -75,7 +91,7 @@ def calculate(system, on_date=None):
             c.method, m.coverage, layers=c.layers, spacing_m=c.spacing_m,
             fixed_qty=c.fixed_qty_per_sqm, wastage_pct=c.wastage_pct,
         )
-        price = m.current_price(on_date)
+        price = m.current_price(on_date) if include_prices else None
         unit_price = price.unit_price if price else None
         result.lines.append(Line(
             item_no=c.item_no,

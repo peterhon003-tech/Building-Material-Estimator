@@ -51,33 +51,42 @@
   <thead>
     <tr>
       <th>#</th><th>項目</th><th>材料 / 規格</th><th>計算方式</th>
-      <th class="num">每 m² 用量</th><th>單位</th><th class="num">單價 (HK$)</th><th class="num">每 m² 價錢 (HK$)</th>
+      <th class="num">每 m² 用量</th><th>單位</th>
+      {% if can_see_price %}<th class="num">單價 (HK$)</th><th class="num">每 m² 價錢 (HK$)</th>{% endif %}
     </tr>
   </thead>
   <tbody>
     {% for l in result.lines %}
-    <tr{% if l.pending %} class="pending"{% endif %}>
+    <tr{% if can_see_price and l.pending or l.qty_pending %} class="pending"{% endif %}>
       <td>{{ l.item_no }}</td>
       <td>{{ l.description }}{% if l.note %}<br><span class="muted">{{ l.note }}</span>{% endif %}</td>
       <td>{{ l.material }}</td>
       <td>{{ l.method }}<br><span class="muted">{{ l.basis }}</span></td>
       <td class="num">{% if l.qty is not None %}{{ l.qty|floatformat:4 }}{% else %}待定{% endif %}</td>
       <td>{{ l.unit }}</td>
+      {% if can_see_price %}
       <td class="num">{% if l.unit_price is not None %}{{ l.unit_price|floatformat:2 }}<br><span class="muted">{{ l.supplier }} {{ l.price_date|date:"Y-m-d" }}</span>{% else %}待提供{% endif %}</td>
       <td class="num">{% if l.cost is not None %}{{ l.cost|floatformat:2 }}{% else %}—{% endif %}</td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>
+  {% if can_see_price %}
   <tfoot>
     <tr><td colspan="7">每 m² 合計（已計項目）</td><td class="num">{{ result.total|floatformat:2 }}</td></tr>
   </tfoot>
+  {% endif %}
 </table>
 
 {% if result.pending_lines %}
 <div class="warnbox">
+  {% if can_see_price %}
   以下 {{ result.pending_lines|length }} 項未計入合計（用量或價錢待定）：
+  {% else %}
+  以下 {{ result.pending_lines|length }} 項的用量待定：
+  {% endif %}
   {% for l in result.pending_lines %}{{ l.item_no }}. {{ l.description }}{% if not forloop.last %}、{% endif %}{% endfor %}。
-  用量由系統管理員在「系統管理」設定，價錢可在「原料價錢」頁更新。
+  {% if can_see_price %}用量由系統管理員在「系統管理」設定，價錢可在「原料價錢」頁更新。{% else %}用量由系統管理員在「系統管理」設定。{% endif %}
 </div>
 {% endif %}
 {% endif %}

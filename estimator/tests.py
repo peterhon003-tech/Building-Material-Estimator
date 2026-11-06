@@ -55,11 +55,37 @@ class SeedAndViewTests(TestCase):
         rw = next(l for l in r.lines if l.item_no == 5)
         self.assertEqual(rw.cost, Decimal("91.67"))     # 2 × 1.1 ÷ 0.72 × 30
 
-    def test_calculator_page(self):
-        self.client.force_login(self.viewer)
+    def test_calculator_page_with_price_permission(self):
+        estimator = User.objects.create_user("est", password="pw-12345-x")
+        estimator.groups.add(Group.objects.get(name="估價員"))
+        self.client.force_login(estimator)
         resp = self.client.get(reverse("calculator"), {"brand": "PROMAT", "system_type": "1", "hours": "2"})
         self.assertContains(resp, "R23J17-1A")
         self.assertContains(resp, "174.71")
+        self.assertContains(resp, "單價 (HK$)")
+        self.assertContains(resp, "原料價錢")                       # 選單有價錢頁
+        self.assertEqual(self.client.get(reverse("price_list")).status_code, 200)
+
+    def test_material_only_user_sees_no_prices(self):
+        """沒有價錢權限：只見材料和用量，網頁內完全沒有價錢資料。"""
+        self.client.force_login(self.viewer)
+        resp = self.client.get(reverse("calculator"), {"brand": "PROMAT", "system_type": "1", "hours": "2"})
+        self.assertContains(resp, "R23J17-1A")
+        self.assertContains(resp, "0.3695")                         # 板每 m² 用量
+        self.assertNotContains(resp, "單價 (HK$)")
+        self.assertNotContains(resp, "129.33")
+        self.assertNotContains(resp, "350.00")
+        self.assertNotContains(resp, "174.71")
+        self.assertNotContains(resp, "WinTech")
+        self.assertNotContains(resp, "原料價錢")
+        self.assertEqual(self.client.get(reverse("price_list")).status_code, 403)
+        m = Material.objects.get(code="PTH-09")
+        self.assertEqual(self.client.get(reverse("price_history", args=[m.pk])).status_code, 403)
+
+    def test_calculate_without_prices_reads_no_price(self):
+        r = services.calculate(services.find_system("PROMAT", 1, 2), include_prices=False)
+        self.assertTrue(all(l.unit_price is None and l.cost is None for l in r.lines))
+        self.assertEqual(next(l for l in r.lines if l.item_no == 1).qty, Decimal("0.3695"))
 
     def test_not_available(self):
         self.client.force_login(self.viewer)
@@ -207,9 +233,27 @@ class ExportTests(TestCase):
         call_command("seed_data", verbosity=0)
         cls.user = User.objects.create_user("exp", password="pw-12345-x")
 
+    def _export_values(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        resp = self.client.get(reverse("calculator_export"),
+                               {"brand": "PROMAT", "system_type": "1", "hours": "2"})
+        self.assertEqual(resp.status_code, 200)
+        ws = load_workbook(BytesIO(resp.content)).active
+        return [c for row in ws.iter_rows(values_only=True) for c in row if c is not None]
+
+    def test_export_without_price_permission(self):
+        self.client.force_login(self.user)
+        values = self._export_values()
+        self.assertIn("R23J17-1A", values)
+        self.assertIn(0.3695, values)
+        self.assertNotIn(129.33, values)
+        self.assertNotIn("單價 (HK$)", values)
+
     def test_export_xlsx(self):
         from io import BytesIO
         from openpyxl import load_workbook
+        self.user.groups.add(Group.objects.get(name="估價員"))
         self.client.force_login(self.user)
         resp = self.client.get(reverse("calculator_export"),
                                {"brand": "PROMAT", "system_type": "1", "hours": "2"})

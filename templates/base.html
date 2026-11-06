@@ -46,7 +46,7 @@
     {% if user.is_authenticated %}
     <nav>
       <a href="{% url 'calculator' %}" class="{% if request.resolver_match.url_name == 'calculator' %}on{% endif %}">計價</a>
-      <a href="{% url 'price_list' %}" class="{% if 'price' in request.resolver_match.url_name %}on{% endif %}">原料價錢</a>
+      {% if perms.estimator.view_materialprice %}<a href="{% url 'price_list' %}" class="{% if 'price' in request.resolver_match.url_name %}on{% endif %}">原料價錢</a>{% endif %}
       {% if user.is_staff %}<a href="{% url 'admin:index' %}">系統管理</a>{% endif %}
     </nav>
     <span class="muted" style="color:#d0d7de">{{ user.get_username }}</span>

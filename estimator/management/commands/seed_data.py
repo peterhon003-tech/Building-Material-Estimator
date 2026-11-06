@@ -11,6 +11,8 @@ from django.db import transaction
 from estimator.models import FireSystem, Material, MaterialPrice, SystemComponent
 from estimator.seed import DRAWING, MATERIALS, SYSTEMS
 
+ESTIMATOR_GROUP = "估價員"
+ESTIMATOR_PERMS = ["view_material", "view_materialprice"]
 PRICE_MANAGER_GROUP = "價錢管理員"
 PRICE_MANAGER_PERMS = ["view_material", "add_material", "view_materialprice", "add_materialprice"]
 
@@ -61,9 +63,11 @@ class Command(BaseCommand):
                     fixed_qty_per_sqm=_dec(fixed), wastage_pct=Decimal(waste), note=note,
                 )
 
-        group, _ = Group.objects.get_or_create(name=PRICE_MANAGER_GROUP)
-        group.permissions.add(*Permission.objects.filter(
-            content_type__app_label="estimator", codename__in=PRICE_MANAGER_PERMS))
+        for name, perms in [(ESTIMATOR_GROUP, ESTIMATOR_PERMS),
+                            (PRICE_MANAGER_GROUP, PRICE_MANAGER_PERMS)]:
+            group, _ = Group.objects.get_or_create(name=name)
+            group.permissions.add(*Permission.objects.filter(
+                content_type__app_label="estimator", codename__in=perms))
 
         self.stdout.write(self.style.SUCCESS(
             f"seed_data 完成：新增材料 {new_m}、價錢 {new_p}、系統 {new_s}"))

@@ -15,6 +15,12 @@ from .forms import MaterialForm, PriceForm, PriceImportForm
 from .models import FireSystem, Material, MaterialPrice
 
 IMPORT_SESSION_KEY = "price_import_rows"
+PRICE_VIEW_PERM = "estimator.view_materialprice"
+
+
+def can_see_price(user):
+    """有「查看材料價錢」權限才看到價錢（估價員、價錢管理員、超級用戶）。"""
+    return user.has_perm(PRICE_VIEW_PERM)
 
 
 @login_required
@@ -31,7 +37,7 @@ def calculator(request):
         except ValueError:
             system = None
         if system:
-            result = services.calculate(system)
+            result = services.calculate(system, include_prices=can_see_price(request.user))
         else:
             not_available = True
 
@@ -43,6 +49,7 @@ def calculator(request):
         "availability": services.availability(),
         "result": result,
         "not_available": not_available,
+        "can_see_price": can_see_price(request.user),
     })
 
 
@@ -58,8 +65,9 @@ def calculator_export(request):
     if not system:
         messages.error(request, "請先選擇有效的品牌、系統和耐火時間。")
         return redirect("calculator")
-    result = services.calculate(system)
-    content = build_calc_xlsx(result, user=request.user.get_username())
+    show_prices = can_see_price(request.user)
+    result = services.calculate(system, include_prices=show_prices)
+    content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=show_prices)
     filename = (f"{system.brand}-{system.get_system_type_display()}-"
                 f"{system.fire_rating_hours}hr-{result.on_date:%Y-%m-%d}.xlsx")
     resp = HttpResponse(
@@ -72,7 +80,7 @@ def calculator_export(request):
 
 # ---------- 原料價錢 ----------
 
-@login_required
+@permission_required(PRICE_VIEW_PERM, raise_exception=True)
 def price_list(request):
     today = date.today()
     rows = []
@@ -85,7 +93,7 @@ def price_list(request):
     })
 
 
-@login_required
+@permission_required(PRICE_VIEW_PERM, raise_exception=True)
 def price_history(request, pk):
     material = get_object_or_404(Material, pk=pk)
     return render(request, "estimator/price_history.html", {
