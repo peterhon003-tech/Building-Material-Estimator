@@ -320,3 +320,63 @@ class ViewModeTests(TestCase):
         self.assertNotContains(resp, 'type="radio"')      # 沒有「包括價錢 / 只看材料」選項
         values, _ = self._xlsx_values({**self.params, "view": "price"})
         self.assertNotIn(129.33, values)
+
+
+class AreaTests(TestCase):
+    """輸入總面積：總用量、訂購數量（向上進位）、總價。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.estimator = User.objects.create_user("ar_est", password="pw-12345-x")
+        cls.estimator.groups.add(Group.objects.get(name="估價員"))
+        cls.plain = User.objects.create_user("ar_plain", password="pw-12345-x")
+        cls.params = {"brand": "PROMAT", "system_type": "1", "hours": "2", "area": "100"}
+
+    def test_calc_order_qty_rounding(self):
+        self.assertEqual(calc.order_qty(Decimal("36.95"), "張"), Decimal("37"))
+        self.assertEqual(calc.order_qty(Decimal("37"), "張"), Decimal("37"))
+        self.assertEqual(calc.order_qty(Decimal("100.5"), "m²"), Decimal("100.5000"))
+        self.assertIsNone(calc.order_qty(None, "張"))
+
+    def test_service_totals(self):
+        r = services.calculate(services.find_system("PROMAT", 1, 2), area=Decimal("100"))
+        board = next(l for l in r.lines if l.item_no == 1)
+        self.assertEqual(board.total_qty, Decimal("36.9524"))
+        self.assertEqual(board.order_qty, Decimal("37"))
+        self.assertEqual(board.total_cost, Decimal("12933.35"))
+        self.assertEqual(r.grand_total, Decimal("17471.97"))   # 板 + 槽鐵 + 岩棉
+
+    def test_page_with_area_and_prices(self):
+        self.client.force_login(self.estimator)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, "總面積 100.00 m²")
+        self.assertContains(resp, "12933.35")
+        self.assertContains(resp, "17471.97")
+        self.assertContains(resp, "174.71")                   # 每 m² 合計仍然顯示
+
+    def test_page_with_area_material_only(self):
+        self.client.force_login(self.plain)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, "訂購數量")
+        self.assertContains(resp, "36.95")
+        self.assertNotContains(resp, "12933.35")
+        self.assertNotContains(resp, "總價 (HK$)")
+
+    def test_invalid_area_falls_back_to_per_sqm(self):
+        self.client.force_login(self.estimator)
+        resp = self.client.get(reverse("calculator"), {**self.params, "area": "abc"})
+        self.assertContains(resp, "總面積必須是數字")
+        self.assertContains(resp, "174.71")
+        self.assertNotContains(resp, "訂購數量")
+
+    def test_export_with_area(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        self.client.force_login(self.estimator)
+        resp = self.client.get(reverse("calculator_export"), self.params)
+        ws = load_workbook(BytesIO(resp.content)).active
+        values = [c for row in ws.iter_rows(values_only=True) for c in row if c is not None]
+        self.assertIn("總面積", values)
+        self.assertIn(37, values)
+        self.assertIn(12933.35, values)

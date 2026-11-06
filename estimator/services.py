@@ -21,6 +21,9 @@ class Line:
     price_date: date | None
     cost: Decimal | None
     note: str = ""
+    total_qty: Decimal | None = None     # 有輸入總面積才有
+    order_qty: Decimal | None = None
+    total_cost: Decimal | None = None
 
     @property
     def pending(self):
@@ -42,6 +45,12 @@ class Result:
         return calc.money(sum((l.cost for l in self.lines if l.cost is not None), Decimal("0")))
 
     include_prices: bool = True
+    area: Decimal | None = None          # 總面積 (m²)，可選
+
+    @property
+    def grand_total(self):
+        """總面積的合計價錢（已計項目）。"""
+        return calc.money(sum((l.total_cost for l in self.lines if l.total_cost is not None), Decimal("0")))
 
     @property
     def pending_lines(self):
@@ -76,14 +85,14 @@ def find_system(brand, system_type, hours):
     )
 
 
-def calculate(system, on_date=None, include_prices=True):
-    """計算一個系統每 m² 的材料用量和價錢。
+def calculate(system, on_date=None, include_prices=True, area=None):
+    """計算一個系統每 m² 的材料用量和價錢；有 area（總面積 m²）時再計總用量和總價。
 
     include_prices=False：只計用量，完全不讀取價錢（給沒有價錢權限的用戶），
     所以價錢資料不會傳到網頁或 Excel。
     """
     on_date = on_date or date.today()
-    result = Result(system=system, on_date=on_date, include_prices=include_prices)
+    result = Result(system=system, on_date=on_date, include_prices=include_prices, area=area)
 
     for c in system.components.select_related("material").all():
         m = c.material
@@ -107,6 +116,9 @@ def calculate(system, on_date=None, include_prices=True):
             price_date=price.effective_date if price else None,
             cost=calc.line_cost(qty, unit_price),
             note=c.note,
+            total_qty=calc.round_qty(calc.total_qty(qty, area)),
+            order_qty=calc.order_qty(calc.total_qty(qty, area), m.unit),
+            total_cost=calc.total_cost(qty, area, unit_price),
         ))
     return result
 

@@ -5,7 +5,7 @@
 - SPACING 按間距：槽鐵 @ c/c       每 m² 用量 = (1 ÷ 間距) × (1 + 損耗%) ÷ 每單位長度
 - FIXED   固定數量：角鐵、螺絲等   每 m² 用量 = 設定數量 × (1 + 損耗%)
 """
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
 AREA = "AREA"
 SPACING = "SPACING"
@@ -56,3 +56,30 @@ def line_cost(qty, unit_price):
     if qty is None or unit_price is None:
         return None
     return money(_d(qty) * _d(unit_price))
+
+
+# 這些單位可以按實際數量計，不用進位成整數（例如人工按 m²）
+NO_ROUND_UNITS = {"m²", "m", "kg", "公斤", "米"}
+
+
+def total_qty(qty_per_sqm, area):
+    """總用量 = 每 m² 用量 × 總面積。"""
+    if qty_per_sqm is None or area is None:
+        return None
+    return _d(qty_per_sqm) * _d(area)
+
+
+def order_qty(total, unit):
+    """建議訂購數量：張、支、件、粒等要買整數，向上進位；m² 等保留小數。"""
+    if total is None:
+        return None
+    if unit in NO_ROUND_UNITS:
+        return round_qty(total)
+    return _d(total).quantize(Decimal("1"), rounding=ROUND_CEILING)
+
+
+def total_cost(qty_per_sqm, area, unit_price):
+    """總價 = 每 m² 用量 × 總面積 × 單價（用未四捨五入的用量計算）。"""
+    if qty_per_sqm is None or area is None or unit_price is None:
+        return None
+    return money(_d(qty_per_sqm) * _d(area) * _d(unit_price))

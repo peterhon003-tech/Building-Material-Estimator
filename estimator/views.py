@@ -23,6 +23,25 @@ def can_see_price(user):
     return user.has_perm(PRICE_VIEW_PERM)
 
 
+MAX_AREA = Decimal("1000000")
+
+
+def parse_area(raw):
+    """讀取總面積輸入。傳回 (面積或 None, 錯誤訊息或 "")。"""
+    raw = (raw or "").strip().replace(",", "")
+    if not raw:
+        return None, ""
+    try:
+        area = Decimal(raw)
+    except Exception:
+        return None, "總面積必須是數字。"
+    if not area.is_finite() or area <= 0:
+        return None, "總面積必須大於 0。"
+    if area > MAX_AREA:
+        return None, "總面積太大，請檢查輸入。"
+    return area.quantize(Decimal("0.01")), ""
+
+
 def show_prices(request):
     """這次是否顯示價錢。
 
@@ -38,6 +57,9 @@ def calculator(request):
     system_type = request.GET.get("system_type", "")
     hours = request.GET.get("hours", "")
 
+    area_raw = request.GET.get("area", "")
+    area, area_error = parse_area(area_raw)
+
     result = None
     not_available = False
     if brand and system_type and hours:
@@ -46,7 +68,7 @@ def calculator(request):
         except ValueError:
             system = None
         if system:
-            result = services.calculate(system, include_prices=show_prices(request))
+            result = services.calculate(system, include_prices=show_prices(request), area=area)
         else:
             not_available = True
 
@@ -61,6 +83,8 @@ def calculator(request):
         "can_see_price": show_prices(request),          # 這次是否顯示價錢欄
         "price_allowed": can_see_price(request.user),   # 是否可以選擇「包括價錢」
         "view_mode": "material" if request.GET.get("view") == "material" else "price",
+        "area_raw": area_raw,
+        "area_error": area_error,
     })
 
 
@@ -77,7 +101,8 @@ def calculator_export(request):
         messages.error(request, "請先選擇有效的品牌、系統和耐火時間。")
         return redirect("calculator")
     with_prices = show_prices(request)
-    result = services.calculate(system, include_prices=with_prices)
+    area, _ = parse_area(request.GET.get("area", ""))
+    result = services.calculate(system, include_prices=with_prices, area=area)
     content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices)
     kind = "price" if with_prices else "material"
     filename = (f"{system.brand}-{system.get_system_type_display()}-"

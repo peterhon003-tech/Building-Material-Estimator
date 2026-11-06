@@ -4,18 +4,21 @@ from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-# (欄名, 闊度, 是否價錢欄)
+# (欄名, 闊度, 是否價錢欄, 是否只在有總面積時顯示)
 COLUMNS = [
-    ("#", 5, False), ("項目", 16, False), ("材料 / 規格", 30, False), ("計算方式", 10, False),
-    ("計算依據", 36, False), ("每 m² 用量", 12, False), ("單位", 7, False),
-    ("單價 (HK$)", 12, True), ("供應商", 24, True), ("價錢日期", 12, True),
-    ("每 m² 價錢 (HK$)", 16, True), ("備註", 34, False),
+    ("#", 5, False, False), ("項目", 16, False, False), ("材料 / 規格", 30, False, False),
+    ("計算方式", 10, False, False), ("計算依據", 36, False, False),
+    ("每 m² 用量", 12, False, False), ("單位", 7, False, False),
+    ("總用量", 11, False, True), ("訂購數量", 10, False, True),
+    ("單價 (HK$)", 12, True, False), ("供應商", 24, True, False), ("價錢日期", 12, True, False),
+    ("每 m² 價錢 (HK$)", 16, True, False), ("總價 (HK$)", 16, True, True), ("備註", 34, False, False),
 ]
 
 
 def build_calc_xlsx(result, user="", show_prices=True):
     """show_prices=False：不包括任何價錢欄和合計（給沒有價錢權限的用戶）。"""
-    cols = [c for c in COLUMNS if show_prices or not c[2]]
+    has_area = result.area is not None
+    cols = [c for c in COLUMNS if (show_prices or not c[2]) and (has_area or not c[3])]
     names = [c[0] for c in cols]
     s = result.system
     wb = Workbook()
@@ -37,6 +40,7 @@ def build_calc_xlsx(result, user="", show_prices=True):
         ("系統總厚度", f"{s.overall_thickness_mm} mm" if s.overall_thickness_mm else ""),
         ("圖則", s.drawing_ref),
         *([("價錢日期", result.on_date.isoformat())] if show_prices else []),
+        *([("總面積", f"{result.area} m²")] if has_area else []),
         ("匯出人", user),
     ]
     for k, v in info:
@@ -59,10 +63,14 @@ def build_calc_xlsx(result, user="", show_prices=True):
             "單價 (HK$)": float(l.unit_price) if l.unit_price is not None else "待提供",
             "供應商": l.supplier, "價錢日期": l.price_date.isoformat() if l.price_date else "",
             "每 m² 價錢 (HK$)": float(l.cost) if l.cost is not None else None, "備註": l.note,
+            "總用量": float(l.total_qty) if l.total_qty is not None else "待定",
+            "訂購數量": float(l.order_qty) if l.order_qty is not None else "",
+            "總價 (HK$)": float(l.total_cost) if l.total_cost is not None else None,
         }
         ws.append([values[n] for n in names])
         r = ws.max_row
-        formats = {"每 m² 用量": "0.0000", "單價 (HK$)": "#,##0.00", "每 m² 價錢 (HK$)": "#,##0.00"}
+        formats = {"每 m² 用量": "0.0000", "單價 (HK$)": "#,##0.00", "每 m² 價錢 (HK$)": "#,##0.00",
+                   "總用量": "0.00", "訂購數量": "0.##", "總價 (HK$)": "#,##0.00"}
         for n, fmt in formats.items():
             if n in names:
                 ws.cell(r, names.index(n) + 1).number_format = fmt
@@ -79,13 +87,19 @@ def build_calc_xlsx(result, user="", show_prices=True):
         letter = ws.cell(head_row, cost_col).column_letter
         ws.append([])
         total = [""] * len(names)
-        total[1] = "每 m² 合計（已計項目）"
+        total[1] = "合計（已計項目）" if has_area else "每 m² 合計（已計項目）"
         total[cost_col - 1] = f"=SUM({letter}{first}:{letter}{last})"
         ws.append(total)
         total_row = ws.max_row
         ws.cell(total_row, 2).font = bold
         ws.cell(total_row, cost_col).font = bold
         ws.cell(total_row, cost_col).number_format = "#,##0.00"
+        if has_area:
+            tc = names.index("總價 (HK$)") + 1
+            tl = ws.cell(head_row, tc).column_letter
+            ws.cell(total_row, tc).value = f"=SUM({tl}{first}:{tl}{last})"
+            ws.cell(total_row, tc).font = bold
+            ws.cell(total_row, tc).number_format = "#,##0.00"
 
     pending = result.pending_lines
     if pending:
