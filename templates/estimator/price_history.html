@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% block title %}價錢紀錄 · {{ material }}{% endblock %}
+{% load fb %}
+{% block title %}{% t "價錢紀錄 · {name}" name=material %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'price_list' %}">← 返回原料價錢</a></p>
-<h1>價錢紀錄：{{ material }}</h1>
-<p class="muted">編號 {{ material.code }} · 單位 {{ material.unit }}
-  {% if can_edit %} · <a href="{% url 'price_add' material.pk %}">更新價錢</a>{% endif %}</p>
+<p><a href="{% url 'price_list' %}">{% t "← 返回原料價錢" %}</a></p>
+<h1>{% t "價錢紀錄：{name}" name=material %}</h1>
+<p class="muted">{% t "編號 {code} · 單位 {unit}" code=material.code unit=material.display_unit %}
+  {% if can_edit %} · <a href="{% url 'price_add' material.pk %}">{% t "更新價錢" %}</a>{% endif %}</p>
 
 <table>
   <thead>
-    <tr><th>生效日期</th><th class="num">單價 (HK$)</th><th>供應商</th><th>備註</th><th>修改人</th><th>輸入時間</th><th></th></tr>
+    <tr><th>{% t "生效日期" %}</th><th class="num">{% t "單價 (HK$)" %}</th><th>{% t "供應商" %}</th><th>{% t "備註" %}</th><th>{% t "修改人" %}</th><th>{% t "輸入時間" %}</th><th></th></tr>
   </thead>
   <tbody>
     {% for p in prices %}
@@ -19,10 +20,10 @@
       <td>{{ p.note }}</td>
       <td>{{ p.updated_by }}</td>
       <td>{{ p.created_at|date:"Y-m-d H:i" }}</td>
-      <td>{% if current and p.pk == current.pk %}<span class="tag">現時使用</span>{% endif %}</td>
+      <td>{% if current and p.pk == current.pk %}<span class="tag">{% t "現時使用" %}</span>{% endif %}</td>
     </tr>
     {% empty %}
-    <tr><td colspan="7" class="pending">未有價錢紀錄</td></tr>
+    <tr><td colspan="7" class="pending">{% t "未有價錢紀錄" %}</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -1,9 +1,9 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
+{% load fb %}<!DOCTYPE html>
+{% lang_code as lc %}<html lang="{% if lc == "en" %}en{% elif lc == "zh-hans" %}zh-Hans{% else %}zh-Hant{% endif %}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}防火板計價系統{% endblock %}</title>
+  <title>{% block title %}{% t "防火板計價系統" %}{% endblock %}</title>
   <style>
     :root { --ink:#1f2328; --muted:#5f6b76; --line:#d8dee4; --bg:#f6f8fa; --accent:#b4441c; --ok:#1a7f37; --warn:#9a6700; }
     * { box-sizing: border-box; }
@@ -42,16 +42,18 @@
 <body>
 <header>
   <div class="wrap">
-    <a class="brand" href="{% url 'calculator' %}">防火板計價系統</a>
+    <a class="brand" href="{% url 'calculator' %}">{% t "防火板計價系統" %}</a>
     {% if user.is_authenticated %}
     <nav>
-      <a href="{% url 'calculator' %}" class="{% if request.resolver_match.url_name == 'calculator' %}on{% endif %}">計價</a>
-      {% if perms.estimator.view_materialprice %}<a href="{% url 'price_list' %}" class="{% if 'price' in request.resolver_match.url_name %}on{% endif %}">原料價錢</a>{% endif %}
-      {% if user.is_staff %}<a href="{% url 'admin:index' %}">系統管理</a>{% endif %}
+      <a href="{% url 'calculator' %}" class="{% if request.resolver_match.url_name == 'calculator' %}on{% endif %}">{% t "計價" %}</a>
+      {% if perms.estimator.view_materialprice %}<a href="{% url 'price_list' %}" class="{% if 'price' in request.resolver_match.url_name %}on{% endif %}">{% t "原料價錢" %}</a>{% endif %}
+      {% if user.is_staff %}<a href="{% url 'admin:index' %}">{% t "系統管理" %}</a>{% endif %}
     </nav>
     <span class="muted" style="color:#d0d7de">{{ user.get_username }}</span>
-    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">登出</button></form>
+    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">{% t "登出" %}</button></form>
     {% endif %}
+    {% if not user.is_authenticated %}<span style="flex:1"></span>{% endif %}
+    {% include "includes/language_switcher.html" %}
   </div>
 </header>
 <main class="wrap">
@@ -67,7 +69,7 @@
   document.addEventListener("submit", function () { dirty = false; });
   document.addEventListener("click", function (e) {
     var link = e.target.closest("a[data-fb-cancel]");
-    if (link && dirty && !window.confirm("有未儲存的修改，確定要離開嗎？\n按「確定」會放棄修改。")) {
+    if (link && dirty && !window.confirm("{% filter escapejs %}{% t "有未儲存的修改，確定要離開嗎？" %}{% endfilter %}\n{% filter escapejs %}{% t "按「確定」會放棄修改。" %}{% endfilter %}")) {
       e.preventDefault();
     }
   });

@@ -1,78 +1,77 @@
 {% extends "base.html" %}
-{% block title %}計價 · 防火板計價系統{% endblock %}
+{% load fb %}
+{% block title %}{% t "計價 · 防火板計價系統" %}{% endblock %}
 {% block content %}
-<h1>{% if price_allowed %}每 m² 材料及價錢{% else %}每 m² 材料用量{% endif %}</h1>
+<h1>{% if price_allowed %}{% t "每 m² 材料及價錢" %}{% else %}{% t "每 m² 材料用量" %}{% endif %}</h1>
 
 <form method="get" class="card" id="calc-form">
   <div class="row">
-    <label>1. 品牌
+    <label>{% t "1. 品牌" %}
       <select name="brand" id="brand" required>
-        <option value="">請選擇</option>
+        <option value="">{% t "請選擇" %}</option>
         {% for v, label in brands %}<option value="{{ v }}" {% if selected.brand == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
-    <label>2. 系統
+    <label>{% t "2. 系統" %}
       <select name="system_type" id="system_type" required>
-        <option value="">請選擇</option>
+        <option value="">{% t "請選擇" %}</option>
         {% for v, label in types %}<option value="{{ v }}" {% if selected.system_type == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
-    <label>3. 耐火時間
+    <label>{% t "3. 耐火時間" %}
       <select name="hours" id="hours" required>
-        <option value="">請選擇</option>
+        <option value="">{% t "請選擇" %}</option>
         {% for v, label in hours_choices %}<option value="{{ v }}" data-label="{{ label }}" {% if selected.hours == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
-    <label>4. 總面積 (m²)<span class="muted" style="font-size:12px">可選，留空只計每 m²</span>
-      <input type="number" name="area" id="area" min="0" step="0.01" placeholder="例如 120" value="{{ area_raw }}" style="width:140px">
+    <label>{% t "4. 總面積 (m²)" %}<span class="muted" style="font-size:12px">{% t "可選，留空只計每 m²" %}</span>
+      <input type="number" name="area" id="area" min="0" step="0.01" placeholder="{% t "例如 120" %}" value="{{ area_raw }}" style="width:140px">
     </label>
     {% if price_allowed %}
     <fieldset style="border:1px solid var(--line); border-radius:6px; padding:4px 12px; margin:0">
-      <legend class="muted" style="font-size:13px; padding:0 4px">顯示</legend>
+      <legend class="muted" style="font-size:13px; padding:0 4px">{% t "顯示" %}</legend>
       <label style="flex-direction:row; align-items:center; gap:4px; display:inline-flex">
-        <input type="radio" name="view" value="price" {% if view_mode == "price" %}checked{% endif %}> 包括價錢
+        <input type="radio" name="view" value="price" {% if view_mode == "price" %}checked{% endif %}> {% t "包括價錢" %}
       </label>
       <label style="flex-direction:row; align-items:center; gap:4px; display:inline-flex; margin-left:12px">
-        <input type="radio" name="view" value="material" {% if view_mode == "material" %}checked{% endif %}> 只看材料
+        <input type="radio" name="view" value="material" {% if view_mode == "material" %}checked{% endif %}> {% t "只看材料" %}
       </label>
     </fieldset>
     {% endif %}
-    <button class="btn" type="submit">計算</button>
+    <button class="btn" type="submit">{% t "計算" %}</button>
   </div>
-  <p class="muted" style="margin:10px 0 0">未有數據的組合會顯示「尚未提供」，不能選擇。</p>
+  <p class="muted" style="margin:10px 0 0">{% t "未有數據的組合會顯示「尚未提供」，不能選擇。" %}</p>
 </form>
 
 {% if area_error %}
-  <div class="warnbox">{{ area_error }}（這次只計每 m²）</div>
+  <div class="warnbox">{{ area_error }}{% t "（這次只計每 m²）" %}</div>
 {% endif %}
 
 {% if not_available %}
-  <div class="warnbox">此組合尚未提供，請選擇其他選項。</div>
+  <div class="warnbox">{% t "此組合尚未提供，請選擇其他選項。" %}</div>
 {% endif %}
 
 {% if result %}
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">{{ result.system }}</h2>
-    <a class="btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">匯出 Excel{% if can_see_price %}（包括價錢）{% else %}（只有材料）{% endif %}</a>
+    <a class="btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">{% t "匯出 Excel" %}{% if can_see_price %}{% t "（包括價錢）" %}{% else %}{% t "（只有材料）" %}{% endif %}</a>
   </div>
   <p class="muted" style="margin:0">
-    F.R.R. {{ result.system.frr_label }} ·
-    測試報告 {{ result.system.report_no }} ·
-    系統總厚度 {{ result.system.overall_thickness_mm }}mm ·
-    {% if can_see_price %}價錢日期 {{ result.on_date|date:"Y-m-d" }}{% endif %}
-    {% if result.area %} · <strong>總面積 {{ result.area|floatformat:2 }} m²</strong>{% endif %}<br>
-    圖則：{{ result.system.drawing_ref }}
+    F.R.R. {{ result.system.frr_label }} · {% t "測試報告" %} {{ result.system.report_no }} · {% t "系統總厚度" %} {{ result.system.overall_thickness_mm }}mm ·
+    {% if can_see_price %}{% t "價錢日期" %} {{ result.on_date|date:"Y-m-d" }}{% endif %}
+    {% if result.area %} · <strong>{% t "總面積" %} {{ result.area|floatformat:2 }} m²</strong>{% endif %}<br>
+    {% t "圖則：" %}{{ result.system.drawing_ref }}
   </p>
 </div>
 
 <table>
   <thead>
     <tr>
-      <th>#</th><th>項目</th><th>材料 / 規格</th><th>計算方式</th>
-      <th class="num">每 m² 用量</th><th>單位</th>
-      {% if result.area %}<th class="num">總用量</th><th class="num">訂購數量</th>{% endif %}
-      {% if can_see_price %}<th class="num">單價 (HK$)</th><th class="num">每 m² 價錢 (HK$)</th>{% if result.area %}<th class="num">總價 (HK$)</th>{% endif %}{% endif %}
+      <th>#</th><th>{% t "項目" %}</th><th>{% t "材料 / 規格" %}</th><th>{% t "計算方式" %}</th>
+      <th class="num">{% t "每 m² 用量" %}</th><th>{% t "單位" %}</th>
+      {% if result.area %}<th class="num">{% t "總用量" %}</th><th class="num">{% t "訂購數量" %}</th>{% endif %}
+      {% if can_see_price %}<th class="num">{% t "單價 (HK$)" %}</th><th class="num">{% t "每 m² 價錢 (HK$)" %}</th>{% if result.area %}<th class="num">{% t "總價 (HK$)" %}</th>{% endif %}{% endif %}
     </tr>
   </thead>
   <tbody>
@@ -82,14 +81,14 @@
       <td>{{ l.description }}{% if l.note %}<br><span class="muted">{{ l.note }}</span>{% endif %}</td>
       <td>{{ l.material }}</td>
       <td>{{ l.method }}<br><span class="muted">{{ l.basis }}</span></td>
-      <td class="num">{% if l.qty is not None %}{{ l.qty|floatformat:4 }}{% else %}待定{% endif %}</td>
+      <td class="num">{% if l.qty is not None %}{{ l.qty|floatformat:4 }}{% else %}{% t "待定" %}{% endif %}</td>
       <td>{{ l.unit }}</td>
       {% if result.area %}
-      <td class="num">{% if l.total_qty is not None %}{{ l.total_qty|floatformat:2 }}{% else %}待定{% endif %}</td>
+      <td class="num">{% if l.total_qty is not None %}{{ l.total_qty|floatformat:2 }}{% else %}{% t "待定" %}{% endif %}</td>
       <td class="num"><strong>{% if l.order_qty is not None %}{{ l.order_qty|floatformat:"-2" }}{% else %}—{% endif %}</strong></td>
       {% endif %}
       {% if can_see_price %}
-      <td class="num">{% if l.unit_price is not None %}{{ l.unit_price|floatformat:2 }}<br><span class="muted">{{ l.supplier }} {{ l.price_date|date:"Y-m-d" }}</span>{% else %}待提供{% endif %}</td>
+      <td class="num">{% if l.unit_price is not None %}{{ l.unit_price|floatformat:2 }}<br><span class="muted">{{ l.supplier }} {{ l.price_date|date:"Y-m-d" }}</span>{% else %}{% t "待提供" %}{% endif %}</td>
       <td class="num">{% if l.cost is not None %}{{ l.cost|floatformat:2 }}{% else %}—{% endif %}</td>
       {% if result.area %}<td class="num">{% if l.total_cost is not None %}{{ l.total_cost|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}
       {% endif %}
@@ -99,26 +98,26 @@
   {% if can_see_price %}
   <tfoot>
     <tr>
-      <td colspan="{% if result.area %}9{% else %}7{% endif %}">合計（已計項目）</td>
-      <td class="num">{{ result.total|floatformat:2 }}<br><span class="muted" style="font-weight:400">每 m²</span></td>
+      <td colspan="{% if result.area %}9{% else %}7{% endif %}">{% t "合計（已計項目）" %}</td>
+      <td class="num">{{ result.total|floatformat:2 }}<br><span class="muted" style="font-weight:400">{% t "每 m²" %}</span></td>
       {% if result.area %}<td class="num">{{ result.grand_total|floatformat:2 }}<br><span class="muted" style="font-weight:400">{{ result.area|floatformat:2 }} m²</span></td>{% endif %}
     </tr>
   </tfoot>
   {% endif %}
 </table>
 {% if result.area %}
-<p class="muted">訂購數量 = 總用量向上進位至整數（張、支、件、粒）；總價按總用量計算，未按訂購數量進位。</p>
+<p class="muted">{% t "訂購數量 = 總用量向上進位至整數（張、支、件、粒）；總價按總用量計算，未按訂購數量進位。" %}</p>
 {% endif %}
 
 {% if result.pending_lines %}
 <div class="warnbox">
   {% if can_see_price %}
-  以下 {{ result.pending_lines|length }} 項未計入合計（用量或價錢待定）：
+  {% t "以下 {n} 項未計入合計（用量或價錢待定）：" n=result.pending_lines|length %}
   {% else %}
-  以下 {{ result.pending_lines|length }} 項的用量待定：
+  {% t "以下 {n} 項的用量待定：" n=result.pending_lines|length %}
   {% endif %}
   {% for l in result.pending_lines %}{{ l.item_no }}. {{ l.description }}{% if not forloop.last %}、{% endif %}{% endfor %}。
-  {% if can_see_price %}用量由系統管理員在「系統管理」設定，價錢可在「原料價錢」頁更新。{% else %}用量由系統管理員在「系統管理」設定。{% endif %}
+  {% if can_see_price %}{% t "用量由系統管理員在「系統管理」設定，價錢可在「原料價錢」頁更新。" %}{% else %}{% t "用量由系統管理員在「系統管理」設定。" %}{% endif %}
 </div>
 {% endif %}
 {% endif %}
@@ -130,6 +129,7 @@
   const brand = document.getElementById("brand");
   const type = document.getElementById("system_type");
   const hours = document.getElementById("hours");
+  const NA = " {% filter escapejs %}{% t "（尚未提供）" %}{% endfilter %}";
 
   function refresh() {
     const byType = avail[brand.value] || {};
@@ -137,7 +137,7 @@
       if (!opt.value) continue;
       const ok = !brand.value || (byType[opt.value] || []).length > 0;
       opt.disabled = !ok;
-      opt.textContent = opt.textContent.replace(" （尚未提供）", "") + (ok ? "" : " （尚未提供）");
+      opt.textContent = opt.textContent.replace(NA, "") + (ok ? "" : NA);
       if (!ok && opt.selected) type.value = "";
     }
     const list = (byType[type.value] || []).map(String);
@@ -145,7 +145,7 @@
       if (!opt.value) continue;
       const ok = !brand.value || !type.value || list.includes(opt.value);
       opt.disabled = !ok;
-      opt.textContent = opt.dataset.label + (ok ? "" : " （尚未提供）");
+      opt.textContent = opt.dataset.label + (ok ? "" : NA);
       if (!ok && opt.selected) hours.value = "";
     }
   }

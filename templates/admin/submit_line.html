@@ -1,5 +1,5 @@
 {% extends "admin/submit_line.html" %}
-{% load admin_urls %}
+{% load admin_urls fb %}
 {% comment %}
 在 Django 後台的按鈕列（儲存、儲存並新增另一個…）加入：
 - 新增頁：「取消」
@@ -11,7 +11,7 @@
 {{ block.super }}
 {% if not show_close and not is_popup %}
   {% url opts|admin_urlname:'changelist' as changelist_url %}
-  <a href="{% add_preserved_filters changelist_url %}" class="closelink" data-fb-cancel>{% if add %}取消{% else %}返回列表{% endif %}</a>
+  <a href="{% add_preserved_filters changelist_url %}" class="closelink" data-fb-cancel>{% if add %}{% t "取消" %}{% else %}{% t "返回列表" %}{% endif %}</a>
   <script>
   (function () {
     if (window.fbCancelReady) return;      // 按鈕列出現兩次時只設定一次
@@ -36,7 +36,7 @@
 
     document.addEventListener("click", function (e) {
       var link = e.target.closest("a[data-fb-cancel]");
-      if (link && dirty && !window.confirm("有未儲存的修改，確定要離開嗎？\n按「確定」會放棄修改。")) {
+      if (link && dirty && !window.confirm("{% filter escapejs %}{% t "有未儲存的修改，確定要離開嗎？" %}{% endfilter %}\n{% filter escapejs %}{% t "按「確定」會放棄修改。" %}{% endfilter %}")) {
         e.preventDefault();
       }
     });

@@ -27,10 +27,10 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "estimator.middleware.UserLanguageMiddleware",   # 按用戶帳戶設定的語言
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -81,6 +81,13 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "zh-hant"
+# 介面語言：繁體中文（預設）、簡體中文、英文
+LANGUAGES = [
+    ("zh-hant", "繁體中文"),
+    ("zh-hans", "简体中文"),
+    ("en", "English"),
+]
+LANGUAGE_COOKIE_NAME = "fireboard_language"
 TIME_ZONE = "Asia/Hong_Kong"
 USE_I18N = True
 USE_TZ = True

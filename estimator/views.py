@@ -1,18 +1,21 @@
 from datetime import date
 from decimal import Decimal
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from . import price_import as importer
 from .export import build_calc_xlsx
 from . import services
 from .forms import MaterialForm, PriceForm, PriceImportForm
-from .models import FireSystem, Material, MaterialPrice
+from .i18n import LANGUAGE_CODES, all_languages, localized, tr
+from .models import FireSystem, Material, MaterialPrice, UserProfile
 
 IMPORT_SESSION_KEY = "price_import_rows"
 PRICE_VIEW_PERM = "estimator.view_materialprice"
@@ -34,11 +37,11 @@ def parse_area(raw):
     try:
         area = Decimal(raw)
     except Exception:
-        return None, "總面積必須是數字。"
+        return None, tr("總面積必須是數字。")
     if not area.is_finite() or area <= 0:
-        return None, "總面積必須大於 0。"
+        return None, tr("總面積必須大於 0。")
     if area > MAX_AREA:
-        return None, "總面積太大，請檢查輸入。"
+        return None, tr("總面積太大，請檢查輸入。")
     return area.quantize(Decimal("0.01")), ""
 
 
@@ -98,14 +101,14 @@ def calculator_export(request):
     except ValueError:
         system = None
     if not system:
-        messages.error(request, "請先選擇有效的品牌、系統和耐火時間。")
+        messages.error(request, tr("請先選擇有效的品牌、系統和耐火時間。"))
         return redirect("calculator")
     with_prices = show_prices(request)
     area, _ = parse_area(request.GET.get("area", ""))
     result = services.calculate(system, include_prices=with_prices, area=area)
-    content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices)
+    content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices, t=tr)
     kind = "price" if with_prices else "material"
-    filename = (f"{system.brand}-{system.get_system_type_display()}-"
+    filename = (f"{system.brand}-{dict(FireSystem.TYPE_CHOICES)[system.system_type]}-"
                 f"{system.fire_rating_hours}hr-{kind}-{result.on_date:%Y-%m-%d}.xlsx")
     resp = HttpResponse(
         content,
@@ -153,7 +156,8 @@ def price_add(request, pk):
             price.material = material
             price.updated_by = request.user.get_username()
             price.save()
-            messages.success(request, f"已更新 {material} 的價錢：${price.unit_price}（{price.effective_date} 起生效）")
+            messages.success(request, tr("已更新 {m} 的價錢：${p}（{d} 起生效）",
+                                         m=material, p=price.unit_price, d=price.effective_date))
             return redirect("price_list")
     else:
         form = PriceForm(initial={
@@ -181,9 +185,9 @@ def material_add(request):
                     material=material, unit_price=price,
                     supplier=form.cleaned_data.get("supplier", ""),
                     effective_date=form.cleaned_data["effective_date"],
-                    note="新增材料時輸入", updated_by=request.user.get_username(),
+                    note=tr("新增材料時輸入"), updated_by=request.user.get_username(),
                 )
-        messages.success(request, f"已新增材料 {material.code} {material}")
+        messages.success(request, tr("已新增材料 {code} {name}", code=material.code, name=material))
         return redirect("price_history", pk=material.pk)
     return render(request, "estimator/material_form.html", {"form": form})
 
@@ -203,9 +207,9 @@ def price_import_template(request):
     rows = []
     for m in Material.objects.filter(active=True):
         p = m.current_price()
-        rows.append((m.code, m.name, m.spec, m.unit,
+        rows.append((m.code, localized(m.name, m.name_en), localized(m.spec, m.spec_en), m.display_unit(),
                      p.unit_price if p else None, p.supplier if p else ""))
-    content = importer.build_template(rows)
+    content = importer.build_template(rows, t=tr)
     resp = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -223,7 +227,8 @@ def price_import(request):
         if form.is_valid():
             result = importer.parse_workbook(
                 form.cleaned_data["file"], _materials_lookup(),
-                form.cleaned_data["default_supplier"], form.cleaned_data["default_date"],
+                form.cleaned_data["default_supplier"], form.cleaned_data["default_date"], t=tr,
+                header_aliases={h: all_languages(h) for h in importer.HEADERS},
             )
             request.session[IMPORT_SESSION_KEY] = [r.to_session() for r in result.valid]
     else:
@@ -236,7 +241,7 @@ def price_import(request):
 def price_import_confirm(request):
     rows = request.session.pop(IMPORT_SESSION_KEY, None)
     if not rows:
-        messages.error(request, "沒有可儲存的資料，請重新上載。")
+        messages.error(request, tr("沒有可儲存的資料，請重新上載。"))
         return redirect("price_import")
 
     user = request.user.get_username()
@@ -250,8 +255,27 @@ def price_import_confirm(request):
             MaterialPrice.objects.create(
                 material=m, unit_price=Decimal(r["new_price"]), supplier=r["supplier"],
                 effective_date=date.fromisoformat(r["effective_date"]),
-                note=r["note"] or "Excel 匯入", updated_by=user,
+                note=r["note"] or tr("Excel 匯入"), updated_by=user,
             )
             created += 1
-    messages.success(request, f"已從 Excel 更新 {created} 項價錢。")
+    messages.success(request, tr("已從 Excel 更新 {n} 項價錢。", n=created))
     return redirect("price_list")
+
+
+# ---------- 介面語言 ----------
+
+@require_POST
+def set_language(request):
+    """切換介面語言。已登入：存入帳戶；未登入（登入頁）：只存 cookie。"""
+    lang = request.POST.get("language", "")
+    nxt = request.POST.get("next") or "/"
+    if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
+        nxt = "/"
+    response = redirect(nxt)
+    if lang in LANGUAGE_CODES:
+        if request.user.is_authenticated:
+            UserProfile.objects.update_or_create(user=request.user, defaults={"language": lang})
+        response.set_cookie(settings.LANGUAGE_COOKIE_NAME, lang, max_age=365 * 24 * 3600,
+                            samesite="Lax")
+    return response

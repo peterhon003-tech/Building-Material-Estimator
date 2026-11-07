@@ -89,3 +89,48 @@ SYSTEMS = [
         ],
     },
 ]
+
+
+# ---------- 英文名稱（英文介面用；簡體會自動由繁體轉換）----------
+# 材料編號 → (英文名稱, 英文規格)。留空 = 和中文相同
+MATERIALS_EN = {
+    "CH-30x50x30x0.6": ("G.I. channel", "30×50×30×0.6mm × 8 ft"),
+    "CH-50x50x50x0.8": ("G.I. channel", "50×50×50×0.8mm × 8 ft"),
+    "CH-100x50x100x1.0": ("G.I. channel", "100×50×100×1.0mm × 8 ft"),
+    "AG-50x50x0.6": ("G.I. angle", "50×50×0.6mm × 8 ft"),
+    "AG-50x50x0.8": ("G.I. angle", "50×50×0.8mm × 8 ft"),
+    "AG-50x50x1.0": ("G.I. angle", "50×50×1.0mm × 8 ft"),
+    "AG-50x50x2.0": ("G.I. angle", "50×50×2.0mm × 8 ft"),
+    "RW-R60-50": ("TANDA rockwool R60", ""),
+    "RW-R100-50": ("TANDA rockwool R100", ""),
+    "FX-M4-SCREW": ("M4 self-tapping screw", ""),
+    "FX-M8-ANCHOR": ("M8 expansion anchor bolt", ""),
+    "LB-ENCL": ("Enclosure installation labour", ""),
+}
+
+# 組件項目（中文）→ 英文
+COMPONENTS_EN = {
+    "Promat 板": "Promat board",
+    "G.I. 槽鐵": "G.I. channel",
+    "連牆角鐵": "Wall angle",
+    "連板角鐵": "Board angle",
+    "岩棉": "Rockwool",
+    "M4 自攻螺絲": "M4 self-tapping screw",
+    "M8 膨脹螺栓": "M8 expansion anchor bolt",
+    "安裝人工": "Installation labour",
+}
+
+# 組件備註（中文）→ 英文
+NOTES_EN = {
+    "@1220mm c/c": "@1220mm c/c",
+    "@610mm c/c": "@610mm c/c",
+    "每 m² 數量待定": "Quantity per m² to be confirmed",
+    "50mm × 60kg/m³": "50mm × 60kg/m³",
+    "2 × 50mm × 100kg/m³": "2 × 50mm × 100kg/m³",
+    "@200mm c/c，每 m² 數量待定": "@200mm c/c, quantity per m² to be confirmed",
+    "@ max 500mm c/c，每 m² 數量待定": "@ max 500mm c/c, quantity per m² to be confirmed",
+    "@ max 600mm c/c，每 m² 數量待定": "@ max 600mm c/c, quantity per m² to be confirmed",
+    "人工價待定": "Labour rate to be confirmed",
+    "@610mm c/c；報價單寫 1.0×50×100×50，請確認規格":
+        "@610mm c/c; quotation shows 1.0×50×100×50, please confirm the size",
+}

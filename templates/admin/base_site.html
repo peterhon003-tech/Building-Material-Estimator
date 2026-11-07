@@ -1,0 +1,6 @@
+{% extends "admin/base_site.html" %}
+{% comment %}系統管理頁面右上角加入語言選擇，和主網站共用同一個帳戶語言設定。{% endcomment %}
+{% block userlinks %}
+{{ block.super }}
+<span style="display:inline-block; margin-left:8px; vertical-align:middle">{% include "includes/language_switcher.html" %}</span>
+{% endblock %}

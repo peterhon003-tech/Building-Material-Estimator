@@ -5,8 +5,10 @@
 確保每個價錢都有修改人和時間，舊價錢永遠保留。
 """
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.models import User
 
-from .models import FireSystem, Material, MaterialPrice, SystemComponent
+from .models import FireSystem, Material, MaterialPrice, SystemComponent, UserProfile
 
 PRICE_FIELDS = ["unit_price", "supplier", "effective_date", "note", "updated_by", "created_at"]
 
@@ -28,9 +30,9 @@ class MaterialPriceInline(admin.TabularInline):
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
-    list_display = ["code", "name", "spec", "category", "unit", "coverage", "active"]
+    list_display = ["code", "name", "spec", "name_en", "category", "unit", "coverage", "active"]
     list_filter = ["category", "active"]
-    search_fields = ["code", "name", "spec"]
+    search_fields = ["code", "name", "spec", "name_en"]
     inlines = [MaterialPriceInline]
 
 
@@ -64,3 +66,19 @@ class FireSystemAdmin(admin.ModelAdmin):
     list_display = ["__str__", "frr_label", "report_no", "overall_thickness_mm", "active"]
     list_filter = ["brand", "system_type", "fire_rating_hours", "active"]
     inlines = [SystemComponentInline]
+
+
+class UserProfileInline(admin.StackedInline):
+    """在用戶頁可設定介面語言。"""
+    model = UserProfile
+    can_delete = False
+    extra = 1
+    max_num = 1
+
+
+admin.site.unregister(User)
+
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    inlines = [UserProfileInline]

@@ -12,4 +12,5 @@ urlpatterns = [
     path("prices/import/template/", views.price_import_template, name="price_import_template"),
     path("prices/import/confirm/", views.price_import_confirm, name="price_import_confirm"),
     path("materials/add/", views.material_add, name="material_add"),
+    path("language/", views.set_language, name="set_language"),
 ]

@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from . import calc
+from .i18n import tr
 from .models import FireSystem
 
 
@@ -64,15 +65,17 @@ class Result:
 
 
 def _basis(c, coverage, unit):
+    """計算依據的文字，按目前語言顯示。unit 已是翻譯後的單位。"""
     w = f"(1 + {c.wastage_pct.normalize():f}%)"
+    cov = f"{coverage.normalize():f}"
     if c.method == calc.AREA:
-        return f"{c.layers} 層 × {w} ÷ {coverage.normalize():f} m²/{unit}"
+        return tr("{layers} 層 × {w} ÷ {cov} m²/{unit}", layers=c.layers, w=w, cov=cov, unit=unit)
     if c.method == calc.SPACING:
-        s = c.spacing_m.normalize() if c.spacing_m else "?"
-        return f"1 ÷ {s} m × {w} ÷ {coverage.normalize():f} m/{unit}"
+        s = f"{c.spacing_m.normalize():f}" if c.spacing_m else "?"
+        return tr("1 ÷ {s} m × {w} ÷ {cov} m/{unit}", s=s, w=w, cov=cov, unit=unit)
     if c.fixed_qty_per_sqm is None:
-        return "每 m² 數量待定"
-    return f"{c.fixed_qty_per_sqm.normalize():f} {unit}/m² × {w}"
+        return tr("每 m² 數量待定")
+    return tr("{q} {unit}/m² × {w}", q=f"{c.fixed_qty_per_sqm.normalize():f}", unit=unit, w=w)
 
 
 def find_system(brand, system_type, hours):
@@ -102,20 +105,21 @@ def calculate(system, on_date=None, include_prices=True, area=None):
         )
         price = m.current_price(on_date) if include_prices else None
         unit_price = price.unit_price if price else None
+        unit = m.display_unit()
         result.lines.append(Line(
             item_no=c.item_no,
-            description=c.description,
-            material=str(m),
-            category=m.get_category_display(),
-            unit=m.unit,
-            method=c.get_method_display(),
-            basis=_basis(c, m.coverage, m.unit),
+            description=c.display_description(),
+            material=m.display_name(),
+            category=str(m.get_category_display()),
+            unit=unit,
+            method=str(c.get_method_display()),
+            basis=_basis(c, m.coverage, unit),
             qty=calc.round_qty(qty),
             unit_price=unit_price,
             supplier=price.supplier if price else "",
             price_date=price.effective_date if price else None,
             cost=calc.line_cost(qty, unit_price),
-            note=c.note,
+            note=c.display_note(),
             total_qty=calc.round_qty(calc.total_qty(qty, area)),
             order_qty=calc.order_qty(calc.total_qty(qty, area), m.unit),
             total_cost=calc.total_cost(qty, area, unit_price),

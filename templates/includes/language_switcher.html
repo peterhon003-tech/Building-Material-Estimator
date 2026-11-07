@@ -1,0 +1,10 @@
+{% load fb %}{% lang_code as current %}{% language_choices as choices %}
+<form method="post" action="{% url 'set_language' %}" class="lang-switch" style="margin:0">
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <select name="language" aria-label="Language" onchange="this.form.submit()"
+          style="padding:3px 6px; font-size:13px; background:#32383f; color:#fff; border:1px solid #57606a">
+    {% for code, label in choices %}<option value="{{ code }}" {% if code == current %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <noscript><button type="submit">OK</button></noscript>
+</form>

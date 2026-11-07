@@ -421,3 +421,121 @@ class AdminCancelButtonTests(TestCase):
         m = Material.objects.get(code="PTH-09")
         resp = self.client.get(reverse("price_add", args=[m.pk]))
         self.assertContains(resp, 'data-fb-cancel>取消</a>')
+
+
+@override_settings(STORAGES=PLAIN_STATIC)
+class LanguageTests(TestCase):
+    """三語介面：語言跟帳戶記住；簡體自動轉換；英文用對照表和英文欄；Excel 跟隨語言。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.user = User.objects.create_user("lang_user", password="pw-12345-x")
+        cls.user.groups.add(Group.objects.get(name="估價員"))
+        cls.other = User.objects.create_user("lang_other", password="pw-12345-x")
+        cls.params = {"brand": "PROMAT", "system_type": "1", "hours": "2", "area": "100"}
+
+    def _set(self, lang):
+        return self.client.post(reverse("set_language"), {"language": lang, "next": "/"})
+
+    def test_default_is_traditional(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, ">計算</button>")
+        self.assertContains(resp, "G.I. 槽鐵")
+
+    def test_english_saved_to_account(self):
+        from .models import UserProfile
+        self.client.force_login(self.user)
+        resp = self._set("en")
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(UserProfile.objects.get(user=self.user).language, "en")
+        self.client.cookies.clear()                      # 換瀏覽器：仍然是英文
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, ">Calculate</button>")
+        self.assertContains(resp, "Fire Board Estimator")
+        self.assertContains(resp, "G.I. channel")         # 英文材料名稱
+        self.assertContains(resp, "Unit price (HK$)")
+        self.assertContains(resp, "Total cost (HK$)")
+        self.assertContains(resp, "sheet")                # 計價單位「張」
+        self.assertNotContains(resp, ">計算</button>")
+
+    def test_other_user_not_affected(self):
+        self.client.force_login(self.user)
+        self._set("en")
+        self.client.cookies.clear()                      # 清除第一個用戶的語言 cookie 和登入
+        self.client.force_login(self.other)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, ">計算</button>")
+
+    def test_simplified_auto_conversion(self):
+        try:
+            import opencc  # noqa: F401
+        except ImportError:
+            self.skipTest("opencc 未安裝")
+        self.client.force_login(self.user)
+        self._set("zh-hans")
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, ">计算</button>")
+        self.assertContains(resp, "G.I. 槽铁")            # 數據庫內容也轉換
+
+    def test_invalid_language_ignored(self):
+        from .models import UserProfile
+        self.client.force_login(self.user)
+        self._set("fr")
+        self.assertFalse(UserProfile.objects.filter(user=self.user).exists())
+
+    def test_login_page_language_by_cookie(self):
+        resp = self._set("en")
+        self.assertIn("fireboard_language", resp.cookies)
+        resp = self.client.get(reverse("login"))
+        self.assertContains(resp, ">Log in</button>")
+
+    def test_unsafe_next_redirects_home(self):
+        self.client.force_login(self.user)
+        resp = self.client.post(reverse("set_language"), {"language": "en", "next": "https://evil.example/"})
+        self.assertEqual(resp["Location"], "/")
+
+    def test_excel_export_follows_language(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        self.client.force_login(self.user)
+        self._set("en")
+        resp = self.client.get(reverse("calculator_export"), self.params)
+        ws = load_workbook(BytesIO(resp.content)).active
+        values = [c for row in ws.iter_rows(values_only=True) for c in row if c is not None]
+        self.assertIn("Unit price (HK$)", values)
+        self.assertIn("Order qty", values)
+        self.assertIn("G.I. channel 50×50×50×0.8mm × 8 ft", values)
+        self.assertIn(12933.35, values)
+
+    def test_english_template_can_be_imported_in_chinese(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        manager = User.objects.create_user("lang_mgr", password="pw-12345-x")
+        manager.groups.add(Group.objects.get(name="價錢管理員"))
+        self.client.force_login(manager)
+        self._set("en")
+        wb = load_workbook(BytesIO(self.client.get(reverse("price_import_template")).content))
+        ws = wb.active
+        self.assertEqual(ws.cell(1, 6).value, "New price")
+        codes = {ws.cell(r, 1).value: r for r in range(2, ws.max_row + 1)}
+        ws.cell(codes["PTH-09"], 6).value = 380
+        out = BytesIO()
+        wb.save(out)
+        self._set("zh-hant")                               # 換回繁體才上載
+        resp = self.client.post(reverse("price_import"), {
+            "file": SimpleUploadedFile("p.xlsx", out.getvalue()),
+            "default_date": date.today().isoformat(),
+        })
+        self.assertContains(resp, "可更新 1 項")
+
+    def test_admin_shows_language_switcher_and_english(self):
+        admin_user = User.objects.create_superuser("lang_admin", password="pw-12345-x")
+        self.client.force_login(admin_user)
+        self._set("en")
+        resp = self.client.get(reverse("admin:estimator_material_changelist"))
+        self.assertContains(resp, 'name="language"')
+        self.assertContains(resp, "English name")          # 欄位名稱翻譯

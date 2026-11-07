@@ -15,6 +15,10 @@ from openpyxl.worksheet.datavalidation import DataValidation
 
 HEADERS = ["編號", "名稱", "規格", "單位", "現時單價", "新單價", "供應商", "生效日期", "備註"]
 COL = {h: i for i, h in enumerate(HEADERS)}
+
+
+def _no_translate(text, **kwargs):
+    return text.format(**kwargs) if kwargs else text
 MAX_ROWS = 2000
 
 
@@ -45,12 +49,12 @@ class ImportResult:
     unchanged: list = field(default_factory=list)  # (行號, 編號)
 
 
-def build_template(materials):
+def build_template(materials, t=_no_translate):
     """materials：[(code, name, spec, unit, current_price or None, current_supplier)]"""
     wb = Workbook()
     ws = wb.active
-    ws.title = "價錢"
-    ws.append(HEADERS)
+    ws.title = t("價錢")
+    ws.append([t(h) for h in HEADERS])
     for code, name, spec, unit, price, supplier in materials:
         ws.append([code, name, spec, unit, float(price) if price is not None else None,
                    None, supplier or "", None, ""])
@@ -75,12 +79,12 @@ def build_template(materials):
         for c in row:
             c.number_format = "yyyy-mm-dd"
     dv = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0",
-                        showErrorMessage=True, error="請輸入 0 或以上的數字")
+                        showErrorMessage=True, error=t("請輸入 0 或以上的數字"))
     ws.add_data_validation(dv)
     dv.add(f"F2:F{last}")
     ws.freeze_panes = "A2"
 
-    info = wb.create_sheet("說明")
+    info = wb.create_sheet(t("說明"))
     for line in [
         "使用方法",
         "1. 只需在黃色欄填寫：新單價（必填）、供應商、生效日期（YYYY-MM-DD）、備註。",
@@ -89,7 +93,7 @@ def build_template(materials):
         "4. 不要修改「編號」欄，系統用它配對材料。",
         "5. 上載後會先顯示預覽，確認後才會儲存。舊價錢會保留在紀錄中。",
     ]:
-        info.append([line])
+        info.append([t(line)])
     info["A1"].font = bold
     info.column_dimensions["A"].width = 80
 
@@ -106,21 +110,21 @@ def _text(v):
     return str(v).strip()
 
 
-def _price(v):
+def _price(v, t=_no_translate):
     if v is None or _text(v) == "":
         return None
     try:
         d = Decimal(_text(v).replace(",", "").replace("$", ""))
     except InvalidOperation:
-        raise ValueError(f"新單價「{_text(v)}」不是數字")
+        raise ValueError(t("新單價「{v}」不是數字", v=_text(v)))
     if d < 0:
-        raise ValueError("新單價不可以是負數")
+        raise ValueError(t("新單價不可以是負數"))
     if d.as_tuple().exponent < -2:
         d = d.quantize(Decimal("0.01"))
     return d
 
 
-def _date(v):
+def _date(v, t=_no_translate):
     if v is None or _text(v) == "":
         return None
     if isinstance(v, datetime):
@@ -131,24 +135,31 @@ def _date(v):
     try:
         return date.fromisoformat(s)
     except ValueError:
-        raise ValueError(f"生效日期「{_text(v)}」格式不正確，請用 YYYY-MM-DD")
+        raise ValueError(t("生效日期「{v}」格式不正確，請用 YYYY-MM-DD", v=_text(v)))
 
 
-def parse_workbook(file, materials, default_supplier, default_date):
+def parse_workbook(file, materials, default_supplier, default_date, t=_no_translate,
+                   header_aliases=None):
     """materials：{code: (name, current_price or None, current_date or None)}"""
     result = ImportResult()
     try:
         wb = load_workbook(file, read_only=True, data_only=True)
     except Exception:
-        result.errors.append((0, "無法讀取檔案，請上載 .xlsx 格式的 Excel 檔"))
+        result.errors.append((0, t("無法讀取檔案，請上載 .xlsx 格式的 Excel 檔")))
         return result
 
     ws = wb.worksheets[0]
     rows = ws.iter_rows(values_only=True)
-    header = [_text(h) for h in next(rows, [])]
+    # 範本可能是任何一種介面語言下載的：把欄名換回繁體中文的標準名稱
+    alias_to_key = {}
+    for key in HEADERS:
+        for name in (header_aliases or {}).get(key, {key}) | {key}:
+            alias_to_key[name.strip().lower()] = key
+    header = [alias_to_key.get(_text(h).lower(), _text(h)) for h in next(rows, [])]
     missing = [h for h in ("編號", "新單價") if h not in header]
     if missing:
-        result.errors.append((1, f"找不到欄位：{'、'.join(missing)}。請使用系統下載的範本"))
+        result.errors.append((1, t("找不到欄位：{cols}。請使用系統下載的範本",
+                                   cols="、".join(t(m) for m in missing))))
         return result
     idx = {h: header.index(h) for h in HEADERS if h in header}
 
@@ -159,7 +170,7 @@ def parse_workbook(file, materials, default_supplier, default_date):
     seen = {}
     for n, values in enumerate(rows, start=2):
         if n > MAX_ROWS + 1:
-            result.errors.append((n, f"超過 {MAX_ROWS} 行，其餘未處理"))
+            result.errors.append((n, t("超過 {n} 行，其餘未處理", n=MAX_ROWS)))
             break
         code = _text(cell(values, "編號"))
         raw_price = cell(values, "新單價")
@@ -168,16 +179,17 @@ def parse_workbook(file, materials, default_supplier, default_date):
         if _text(raw_price) == "":
             continue
         if code not in materials:
-            result.errors.append((n, f"找不到材料編號「{code}」"))
+            result.errors.append((n, t("找不到材料編號「{code}」", code=code)))
             continue
         try:
-            price = _price(raw_price)
-            eff = _date(cell(values, "生效日期")) or default_date
+            price = _price(raw_price, t)
+            eff = _date(cell(values, "生效日期"), t) or default_date
         except ValueError as e:
             result.errors.append((n, str(e)))
             continue
         if code in seen:
-            result.errors.append((n, f"編號「{code}」重複（第 {seen[code]} 行已有），此行未處理"))
+            result.errors.append((n, t("編號「{code}」重複（第 {row} 行已有），此行未處理",
+                                       code=code, row=seen[code])))
             continue
         seen[code] = n
 

@@ -15,15 +15,20 @@ COLUMNS = [
 ]
 
 
-def build_calc_xlsx(result, user="", show_prices=True):
-    """show_prices=False：不包括任何價錢欄和合計（給沒有價錢權限的用戶）。"""
+def _no_translate(text, **kwargs):
+    return text.format(**kwargs) if kwargs else text
+
+
+def build_calc_xlsx(result, user="", show_prices=True, t=_no_translate):
+    """show_prices=False：不包括任何價錢欄和合計（給沒有價錢權限的用戶）。
+    t：翻譯函數（estimator.i18n.tr），令 Excel 內容跟隨介面語言。"""
     has_area = result.area is not None
     cols = [c for c in COLUMNS if (show_prices or not c[2]) and (has_area or not c[3])]
     names = [c[0] for c in cols]
     s = result.system
     wb = Workbook()
     ws = wb.active
-    ws.title = "每 m² 材料及價錢"
+    ws.title = t("每 m² 材料及價錢")[:31]
 
     bold = Font(bold=True)
     title = Font(bold=True, size=14)
@@ -32,23 +37,23 @@ def build_calc_xlsx(result, user="", show_prices=True):
     thin = Side(style="thin", color="CCCCCC")
     border = Border(bottom=thin)
 
-    ws.append([f"防火板計價：{s}"])
+    ws.append([t("防火板計價：{name}", name=str(s))])
     ws["A1"].font = title
     info = [
         ("F.R.R.", s.frr_label),
-        ("測試報告", s.report_no),
-        ("系統總厚度", f"{s.overall_thickness_mm} mm" if s.overall_thickness_mm else ""),
-        ("圖則", s.drawing_ref),
-        *([("價錢日期", result.on_date.isoformat())] if show_prices else []),
-        *([("總面積", f"{result.area} m²")] if has_area else []),
-        ("匯出人", user),
+        (t("測試報告"), s.report_no),
+        (t("系統總厚度"), f"{s.overall_thickness_mm} mm" if s.overall_thickness_mm else ""),
+        (t("圖則"), s.drawing_ref),
+        *([(t("價錢日期"), result.on_date.isoformat())] if show_prices else []),
+        *([(t("總面積"), f"{result.area} m²")] if has_area else []),
+        (t("匯出人"), user),
     ]
     for k, v in info:
         ws.append([k, v])
         ws.cell(ws.max_row, 1).font = bold
     ws.append([])
 
-    ws.append(names)
+    ws.append([t(n) for n in names])
     head_row = ws.max_row
     for c in ws[head_row]:
         c.font = bold
@@ -59,11 +64,11 @@ def build_calc_xlsx(result, user="", show_prices=True):
         values = {
             "#": l.item_no, "項目": l.description, "材料 / 規格": l.material,
             "計算方式": l.method, "計算依據": l.basis,
-            "每 m² 用量": float(l.qty) if l.qty is not None else "待定", "單位": l.unit,
-            "單價 (HK$)": float(l.unit_price) if l.unit_price is not None else "待提供",
+            "每 m² 用量": float(l.qty) if l.qty is not None else t("待定"), "單位": l.unit,
+            "單價 (HK$)": float(l.unit_price) if l.unit_price is not None else t("待提供"),
             "供應商": l.supplier, "價錢日期": l.price_date.isoformat() if l.price_date else "",
             "每 m² 價錢 (HK$)": float(l.cost) if l.cost is not None else None, "備註": l.note,
-            "總用量": float(l.total_qty) if l.total_qty is not None else "待定",
+            "總用量": float(l.total_qty) if l.total_qty is not None else t("待定"),
             "訂購數量": float(l.order_qty) if l.order_qty is not None else "",
             "總價 (HK$)": float(l.total_cost) if l.total_cost is not None else None,
         }
@@ -87,7 +92,7 @@ def build_calc_xlsx(result, user="", show_prices=True):
         letter = ws.cell(head_row, cost_col).column_letter
         ws.append([])
         total = [""] * len(names)
-        total[1] = "合計（已計項目）" if has_area else "每 m² 合計（已計項目）"
+        total[1] = t("合計（已計項目）") if has_area else t("每 m² 合計（已計項目）")
         total[cost_col - 1] = f"=SUM({letter}{first}:{letter}{last})"
         ws.append(total)
         total_row = ws.max_row
@@ -103,7 +108,7 @@ def build_calc_xlsx(result, user="", show_prices=True):
 
     pending = result.pending_lines
     if pending:
-        label = "未計入合計（用量或價錢待定）：" if show_prices else "用量待定："
+        label = t("未計入合計（用量或價錢待定）：") if show_prices else t("用量待定：")
         ws.append([])
         ws.append(["", label + "、".join(f"{l.item_no}. {l.description}" for l in pending)])
         ws.cell(ws.max_row, 2).font = pending_font

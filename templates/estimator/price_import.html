@@ -1,16 +1,17 @@
 {% extends "base.html" %}
-{% block title %}Excel 批量更新價錢 · 防火板計價系統{% endblock %}
+{% load fb %}
+{% block title %}{% t "Excel 批量更新價錢 · 防火板計價系統" %}{% endblock %}
 {% block content %}
-<p><a href="{% url 'price_list' %}">← 返回原料價錢</a></p>
-<h1>Excel 批量更新價錢</h1>
+<p><a href="{% url 'price_list' %}">{% t "← 返回原料價錢" %}</a></p>
+<h1>{% t "Excel 批量更新價錢" %}</h1>
 
 {% if not result %}
 <div class="card">
-  <h2 style="margin-top:0">步驟</h2>
+  <h2 style="margin-top:0">{% t "步驟" %}</h2>
   <ol style="margin:0; padding-left:20px">
-    <li><a href="{% url 'price_import_template' %}">下載範本</a>（已列出所有材料和現時價錢）</li>
-    <li>在黃色欄填寫「新單價」，需要時填供應商、生效日期、備註</li>
-    <li>在下面上載，先看預覽，確認後才會儲存</li>
+    <li><a href="{% url 'price_import_template' %}">{% t "下載範本" %}</a>{% t "（已列出所有材料和現時價錢）" %}</li>
+    <li>{% t "在黃色欄填寫「新單價」，需要時填供應商、生效日期、備註" %}</li>
+    <li>{% t "在下面上載，先看預覽，確認後才會儲存" %}</li>
   </ol>
 </div>
 {% endif %}
@@ -25,22 +26,20 @@
     {{ field.errors }}
   </p>
   {% endfor %}
-  <button class="btn" type="submit">上載及預覽</button>
+  <button class="btn" type="submit">{% t "上載及預覽" %}</button>
 </form>
 
 {% if result %}
-  <h2>預覽</h2>
+  <h2>{% t "預覽" %}</h2>
   <p class="muted">
-    可更新 {{ result.valid|length }} 項 ·
-    有錯誤 {{ result.errors|length }} 行 ·
-    價錢和日期沒有變動 {{ result.unchanged|length }} 項（不處理）
+    {% t "可更新 {a} 項 · 有錯誤 {b} 行 · 價錢和日期沒有變動 {c} 項（不處理）" a=result.valid|length b=result.errors|length c=result.unchanged|length %}
   </p>
 
   {% if result.errors %}
   <div class="warnbox">
-    <strong>以下行有錯誤，不會儲存：</strong>
+    <strong>{% t "以下行有錯誤，不會儲存：" %}</strong>
     <ul style="margin:6px 0 0; padding-left:20px">
-      {% for row, msg in result.errors %}<li>{% if row %}第 {{ row }} 行：{% endif %}{{ msg }}</li>{% endfor %}
+      {% for row, msg in result.errors %}<li>{% if row %}{% t "第 {row} 行：" row=row %}{% endif %}{{ msg }}</li>{% endfor %}
     </ul>
   </div>
   {% endif %}
@@ -48,7 +47,7 @@
   {% if result.valid %}
   <table style="margin-top:16px">
     <thead>
-      <tr><th>行</th><th>編號</th><th>材料</th><th class="num">現時單價</th><th class="num">新單價</th><th class="num">變動</th><th>供應商</th><th>生效日期</th><th>備註</th></tr>
+      <tr><th>{% t "行" %}</th><th>{% t "編號" %}</th><th>{% t "材料" %}</th><th class="num">{% t "現時單價" %}</th><th class="num">{% t "新單價" %}</th><th class="num">{% t "變動" %}</th><th>{% t "供應商" %}</th><th>{% t "生效日期" %}</th><th>{% t "備註" %}</th></tr>
     </thead>
     <tbody>
       {% for r in result.valid %}
@@ -58,7 +57,7 @@
         <td>{{ r.name }}</td>
         <td class="num">{% if r.old_price is not None %}{{ r.old_price|floatformat:2 }}{% else %}—{% endif %}</td>
         <td class="num"><strong>{{ r.new_price|floatformat:2 }}</strong></td>
-        <td class="num">{% if r.old_price is not None %}{% if r.new_price > r.old_price %}↑{% elif r.new_price < r.old_price %}↓{% else %}={% endif %}{% else %}新{% endif %}</td>
+        <td class="num">{% if r.old_price is not None %}{% if r.new_price > r.old_price %}↑{% elif r.new_price < r.old_price %}↓{% else %}={% endif %}{% else %}{% t "新" %}{% endif %}</td>
         <td>{{ r.supplier }}</td>
         <td>{{ r.effective_date|date:"Y-m-d" }}</td>
         <td>{{ r.note }}</td>
@@ -68,11 +67,11 @@
   </table>
   <form method="post" action="{% url 'price_import_confirm' %}" style="margin-top:16px">
     {% csrf_token %}
-    <button class="btn" type="submit">確認儲存 {{ result.valid|length }} 項價錢</button>
-    <a class="btn secondary" href="{% url 'price_import' %}">取消</a>
+    <button class="btn" type="submit">{% t "確認儲存 {n} 項價錢" n=result.valid|length %}</button>
+    <a class="btn secondary" href="{% url 'price_import' %}">{% t "取消" %}</a>
   </form>
   {% else %}
-  <div class="warnbox">沒有可更新的價錢。請檢查「新單價」欄是否已填寫。</div>
+  <div class="warnbox">{% t "沒有可更新的價錢。請檢查「新單價」欄是否已填寫。" %}</div>
   {% endif %}
 {% endif %}
 {% endblock %}
