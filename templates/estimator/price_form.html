@@ -19,6 +19,6 @@
   {% endfor %}
   <p class="muted">儲存後會新增一條價錢紀錄，舊價錢不會被刪除。生效日期是今日或之前的價錢會即時用於計價。</p>
   <button class="btn" type="submit">儲存</button>
-  <a class="btn secondary" href="{% url 'price_list' %}">取消</a>
+  <a class="btn secondary" href="{% url 'price_list' %}" data-fb-cancel>取消</a>
 </form>
 {% endblock %}

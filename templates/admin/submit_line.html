@@ -1,0 +1,46 @@
+{% extends "admin/submit_line.html" %}
+{% load admin_urls %}
+{% comment %}
+在 Django 後台的按鈕列（儲存、儲存並新增另一個…）加入：
+- 新增頁：「取消」
+- 編輯頁：「返回列表」
+兩者都返回該項目的列表頁。表單有未儲存的修改時，先彈出確認。
+唯讀頁面（例如材料價錢）Django 已有「關閉」按鈕，這裡不再加。
+{% endcomment %}
+{% block submit-row %}
+{{ block.super }}
+{% if not show_close and not is_popup %}
+  {% url opts|admin_urlname:'changelist' as changelist_url %}
+  <a href="{% add_preserved_filters changelist_url %}" class="closelink" data-fb-cancel>{% if add %}取消{% else %}返回列表{% endif %}</a>
+  <script>
+  (function () {
+    if (window.fbCancelReady) return;      // 按鈕列出現兩次時只設定一次
+    window.fbCancelReady = true;
+    var dirty = false;
+    function markDirty() { dirty = true; }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      var form = document.querySelector("#content-main form");
+      if (!form) return;
+      form.addEventListener("input", markDirty);
+      form.addEventListener("change", markDirty);
+      // 群組、權限的左右選擇框和「新增另一個」連結不一定觸發 change，另外偵測
+      form.addEventListener("click", function (e) {
+        if (e.target.closest(".selector-chooser, .selector-chooseall, .selector-clearall, .add-row, .inline-deletelink")) markDirty();
+      });
+      form.addEventListener("dblclick", function (e) {
+        if (e.target.closest(".selector")) markDirty();
+      });
+      form.addEventListener("submit", function () { dirty = false; });
+    });
+
+    document.addEventListener("click", function (e) {
+      var link = e.target.closest("a[data-fb-cancel]");
+      if (link && dirty && !window.confirm("有未儲存的修改，確定要離開嗎？\n按「確定」會放棄修改。")) {
+        e.preventDefault();
+      }
+    });
+  })();
+  </script>
+{% endif %}
+{% endblock %}

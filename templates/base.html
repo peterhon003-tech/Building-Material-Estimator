@@ -58,5 +58,20 @@
   {% for message in messages %}<div class="msg">{{ message }}</div>{% endfor %}
   {% block content %}{% endblock %}
 </main>
+<script>
+// 有 data-fb-cancel 的「取消」按鈕：表單有未儲存的修改時先確認
+(function () {
+  var dirty = false;
+  document.addEventListener("input", function (e) { if (e.target.closest("main form")) dirty = true; });
+  document.addEventListener("change", function (e) { if (e.target.closest("main form")) dirty = true; });
+  document.addEventListener("submit", function () { dirty = false; });
+  document.addEventListener("click", function (e) {
+    var link = e.target.closest("a[data-fb-cancel]");
+    if (link && dirty && !window.confirm("有未儲存的修改，確定要離開嗎？\n按「確定」會放棄修改。")) {
+      e.preventDefault();
+    }
+  });
+})();
+</script>
 </body>
 </html>

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import Group, User
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from . import calc, services
@@ -380,3 +380,44 @@ class AreaTests(TestCase):
         self.assertIn("總面積", values)
         self.assertIn(37, values)
         self.assertIn(12933.35, values)
+
+
+# 後台頁面會用到靜態檔案；測試時不需要先執行 collectstatic
+PLAIN_STATIC = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+
+
+@override_settings(STORAGES=PLAIN_STATIC)
+class AdminCancelButtonTests(TestCase):
+    """後台新增頁有「取消」、編輯頁有「返回列表」，都返回列表頁；唯讀頁不加。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.admin = User.objects.create_superuser("cb_admin", password="pw-12345-x")
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def test_add_page_has_cancel(self):
+        resp = self.client.get(reverse("admin:auth_user_add"))
+        self.assertContains(resp, f'href="{reverse("admin:auth_user_changelist")}" class="closelink" data-fb-cancel>取消</a>')
+
+    def test_change_page_has_back_to_list(self):
+        m = Material.objects.get(code="PTH-09")
+        resp = self.client.get(reverse("admin:estimator_material_change", args=[m.pk]))
+        self.assertContains(resp, 'class="closelink" data-fb-cancel>返回列表</a>')
+        self.assertContains(resp, "有未儲存的修改")              # 離開確認的程式碼
+
+    def test_read_only_page_has_no_extra_button(self):
+        p = MaterialPrice.objects.first()
+        resp = self.client.get(reverse("admin:estimator_materialprice_change", args=[p.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "data-fb-cancel")
+
+    def test_price_form_cancel_has_confirm_marker(self):
+        m = Material.objects.get(code="PTH-09")
+        resp = self.client.get(reverse("price_add", args=[m.pk]))
+        self.assertContains(resp, 'data-fb-cancel>取消</a>')
