@@ -55,7 +55,7 @@
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">{{ result.system }}</h2>
-    <a class="btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">{% t "匯出 Excel" %}{% if can_see_price %}{% t "（包括價錢）" %}{% else %}{% t "（只有材料）" %}{% endif %}</a>
+    <a class="btn" id="export-btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">{% t "匯出 Excel" %}{% if can_see_price %}{% t "（包括價錢）" %}{% else %}{% t "（只有材料）" %}{% endif %}</a>
   </div>
   <p class="muted" style="margin:0">
     F.R.R. {{ result.system.frr_label }} · {% t "測試報告" %} {{ result.system.report_no }} · {% t "系統總厚度" %} {{ result.system.overall_thickness_mm }}mm ·
@@ -65,7 +65,18 @@
   </p>
 </div>
 
-<table>
+<div id="adjust-bar" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:12px 0">
+  <button type="button" class="btn secondary" id="adj-toggle">{% t "調整" %}</button>
+  <button type="button" class="btn secondary" id="adj-add" hidden>＋ {% t "新增項目" %}</button>
+  <button type="button" class="btn secondary" id="adj-reset" hidden>{% t "還原" %}</button>
+  <span class="tag adj-status" id="adj-status" hidden>{% t "已手動調整（未儲存到系統）" %}</span>
+  <span class="muted" style="font-size:13px">{% t "調整只用於這次查看和匯出 Excel，不會儲存到系統。" %}</span>
+</div>
+<form id="adj-export-form" method="post" action="{% url 'calculator_export_adjusted' %}" hidden>
+  {% csrf_token %}<input type="hidden" name="payload" id="adj-payload">
+</form>
+
+<table id="calc-table">
   <thead>
     <tr>
       <th>#</th><th>{% t "項目" %}</th><th>{% t "材料 / 規格" %}</th><th>{% t "計算方式" %}</th>
@@ -74,7 +85,7 @@
       {% if can_see_price %}<th class="num">{% t "單價 (HK$)" %}</th><th class="num">{% t "每 m² 價錢 (HK$)" %}</th>{% if result.area %}<th class="num">{% t "總價 (HK$)" %}</th>{% endif %}{% endif %}
     </tr>
   </thead>
-  <tbody>
+  <tbody id="calc-body">
     {% for l in result.lines %}
     <tr{% if can_see_price and l.pending or l.qty_pending %} class="pending"{% endif %}>
       <td>{{ l.item_no }}</td>
@@ -99,8 +110,8 @@
   <tfoot>
     <tr>
       <td colspan="{% if result.area %}9{% else %}7{% endif %}">{% t "合計（已計項目）" %}</td>
-      <td class="num">{{ result.total|floatformat:2 }}<br><span class="muted" style="font-weight:400">{% t "每 m²" %}</span></td>
-      {% if result.area %}<td class="num">{{ result.grand_total|floatformat:2 }}<br><span class="muted" style="font-weight:400">{{ result.area|floatformat:2 }} m²</span></td>{% endif %}
+      <td class="num"><span id="total-sqm">{{ result.total|floatformat:2 }}</span><br><span class="muted" style="font-weight:400">{% t "每 m²" %}</span></td>
+      {% if result.area %}<td class="num"><span id="total-all">{{ result.grand_total|floatformat:2 }}</span><br><span class="muted" style="font-weight:400">{{ result.area|floatformat:2 }} m²</span></td>{% endif %}
     </tr>
   </tfoot>
   {% endif %}
@@ -110,7 +121,7 @@
 {% endif %}
 
 {% if result.pending_lines %}
-<div class="warnbox">
+<div class="warnbox" id="pending-box">
   {% if can_see_price %}
   {% t "以下 {n} 項未計入合計（用量或價錢待定）：" n=result.pending_lines|length %}
   {% else %}
@@ -120,6 +131,22 @@
   {% if can_see_price %}{% t "用量由系統管理員在「系統管理」設定，價錢可在「原料價錢」頁更新。" %}{% else %}{% t "用量由系統管理員在「系統管理」設定。" %}{% endif %}
 </div>
 {% endif %}
+{% endif %}
+
+{% if adjust_data %}
+{{ adjust_data|json_script:"adjust-data" }}
+{{ adjust_i18n|json_script:"adjust-i18n" }}
+<style>
+  #calc-table td.adj-changed { background:#fff8c5; }
+  #calc-table tr.adj-added td { background:#eef6ff; }
+  #calc-table input.adj-in { width:100%; min-width:70px; padding:3px 6px; font-size:13px; }
+  #calc-table input.adj-in.num { text-align:right; max-width:110px; }
+  #calc-table input.adj-bad { border-color:#cf222e; background:#ffebe9; }
+  #calc-table .adj-del { border:0; background:none; color:#cf222e; cursor:pointer; font-size:15px; padding:0 4px; }
+  .adj-status { background:#fff8c5; border-color:#d4a72c; color:#7d4e00; }
+  #calc-table select.adj-sel { width:100%; min-width:160px; padding:3px 4px; font-size:13px; margin-bottom:4px; }
+  #calc-table .adj-warn { display:block; color:#cf222e; font-size:12px; margin-top:2px; }
+</style>
 {% endif %}
 
 {{ availability|json_script:"availability" }}
@@ -162,4 +189,290 @@
   refresh();
 })();
 </script>
+{% if adjust_data %}
+<script>
+// ---------- 臨時調整：只在瀏覽器內修改和重算，不會儲存到系統 ----------
+(function () {
+  const D = JSON.parse(document.getElementById("adjust-data").textContent);
+  const T = JSON.parse(document.getElementById("adjust-i18n").textContent);
+  const area = D.area === null ? null : parseFloat(D.area);
+  const showPrices = D.show_prices;
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+  const original = clone(D.lines);
+  let rows = clone(original);
+  let editing = false, adjusted = false, exported = true;
+
+  const body = document.getElementById("calc-body");
+  const btnToggle = document.getElementById("adj-toggle");
+  const btnAdd = document.getElementById("adj-add");
+  const btnReset = document.getElementById("adj-reset");
+  const status = document.getElementById("adj-status");
+  const pendingBox = document.getElementById("pending-box");
+
+  // 數字：空白 = null；格式錯誤 = NaN
+  function num(v) {
+    if (v === null || v === undefined) return null;
+    const s = String(v).replace(/,/g, "").trim();
+    if (s === "") return null;
+    const n = Number(s);
+    return (isFinite(n) && n >= 0) ? n : NaN;
+  }
+  const valid = (n) => n !== null && !isNaN(n);
+  function round(n, d) { const f = Math.pow(10, d); return Math.round((n + Number.EPSILON) * f) / f; }
+  function fmt(n, d) { return (n === null || n === undefined || isNaN(n)) ? "—" : round(Number(n), d).toFixed(d); }
+  function fmtOrder(n) {
+    if (n === null || n === undefined) return "—";
+    n = Number(n); return Number.isInteger(n) ? String(n) : round(n, 2).toFixed(2);
+  }
+
+  // 計算一行：未改過數字的行沿用伺服器結果，改過的才在瀏覽器重算
+  function compute(r) {
+    if (!r.numDirty) {
+      return { qty: r.qty_display === null ? null : Number(r.qty_display),
+               cost: r.cost == null ? null : Number(r.cost),
+               totalQty: r.total_qty == null ? null : Number(r.total_qty),
+               order: r.order_qty == null ? null : Number(r.order_qty),
+               totalCost: r.total_cost == null ? null : Number(r.total_cost) };
+    }
+    const q = num(r.qty), p = showPrices ? num(r.unit_price) : null;
+    const out = { qty: valid(q) ? round(q, 4) : null, cost: null, totalQty: null, order: null, totalCost: null };
+    if (valid(q) && valid(p)) out.cost = round(q * p, 2);
+    if (valid(q) && area !== null) {
+      out.totalQty = round(q * area, 4);
+      out.order = r.round_up ? Math.ceil(q * area - 1e-9) : round(q * area, 4);
+      if (valid(p)) out.totalCost = round(q * area * p, 2);
+    }
+    return out;
+  }
+
+  function changed(r, field) {
+    if (r.state === "added") return false;
+    const o = original[r._orig];
+    return o && String(o[field] ?? "") !== String(r[field] ?? "");
+  }
+
+  function markAdjusted() {
+    adjusted = true; exported = false;
+    status.hidden = false;
+    if (pendingBox) pendingBox.hidden = true;
+  }
+
+  function el(tag, attrs, text) {
+    const e = document.createElement(tag);
+    for (const k in (attrs || {})) e.setAttribute(k, attrs[k]);
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function input(r, field, isNum, label) {
+    const i = el("input", { type: "text", class: "adj-in" + (isNum ? " num" : ""), "aria-label": label });
+    if (isNum) i.setAttribute("inputmode", "decimal");
+    i.value = (field === "qty" && !r.qtyEdited) ? (r.qty_display ?? "") : (r[field] ?? "");
+    i.addEventListener("input", function () {
+      r[field] = i.value;
+      if (field === "qty") r.qtyEdited = true;
+      if (field === "unit_price") r.priceEdited = true;
+      if (isNum) {
+        r.numDirty = true;
+        if (field === "unit_price") { r.supplier = ""; r.price_date = ""; }
+        i.classList.toggle("adj-bad", isNaN(num(i.value)));
+      }
+      if (r.state === "original") r.state = "edited";
+      markAdjusted();
+      refreshRow(r); refreshTotals();
+    });
+    return i;
+  }
+
+  // 換產品的下拉選單：原有的行 = 同類別產品（伺服器已計好用量）；新增的行 = 所有材料
+  function productSelect(r) {
+    const sel = el("select", { class: "adj-sel", "aria-label": T.material });
+    if (r.state === "added") {
+      sel.appendChild(el("option", { value: "" }, T.choose));
+      const groups = {};
+      (D.catalogue || []).forEach(function (it) {
+        if (!groups[it.category]) { groups[it.category] = el("optgroup", { label: it.category }); sel.appendChild(groups[it.category]); }
+        groups[it.category].appendChild(el("option", { value: it.code }, it.label));
+      });
+      sel.value = r.code || "";
+      sel.addEventListener("change", function () {
+        const it = (D.catalogue || []).find(x => x.code === sel.value);
+        if (!it) return;
+        r.code = it.code; r.material = it.label; r.unit = it.unit; r.round_up = it.round_up;
+        if (!r.description) r.description = it.category;
+        if (showPrices) { r.unit_price = it.unit_price ?? ""; r.supplier = it.supplier || ""; r.price_date = it.price_date || ""; }
+        markAdjusted(); render();
+      });
+      return sel;
+    }
+    if (!r.options || r.options.length < 2) return null;
+    r.options.forEach(function (opt) {
+      sel.appendChild(el("option", { value: opt.code }, opt.label + (opt.original ? "（" + T.original + "）" : " ⚠")));
+    });
+    sel.value = r.code;
+    sel.addEventListener("change", function () {
+      const opt = r.options.find(x => x.code === sel.value);
+      const o = original[r._orig];
+      const manual = r.qtyEdited || r.priceEdited || changed(r, "description") || changed(r, "unit")
+                     || (!r.offSpec && changed(r, "material"));
+      if (manual && !window.confirm(T.overwrite)) { sel.value = r.code; return; }
+      if (opt.original) {                                   // 換回原配方 = 還原這一行
+        const idx = r._orig;
+        Object.keys(r).forEach(k => delete r[k]);
+        Object.assign(r, clone(o)); r._orig = idx;
+      } else {
+        r.code = opt.code; r.material = opt.label; r.unit = opt.unit; r.round_up = opt.round_up;
+        r.qty = opt.qty; r.qty_display = opt.qty === null ? null : round(Number(opt.qty), 4).toFixed(4);
+        r.basis = opt.basis;
+        if (showPrices) { r.unit_price = opt.unit_price ?? ""; r.supplier = opt.supplier || ""; r.price_date = opt.price_date || ""; }
+        r.numDirty = true; r.qtyEdited = false; r.priceEdited = false;
+        r.offSpec = true; r.replaced_from = o.material; r.state = "edited";
+      }
+      markAdjusted(); render();
+    });
+    return sel;
+  }
+
+  function cell(tr, cls) { const td = el("td", cls ? { class: cls } : {}); tr.appendChild(td); return td; }
+
+  function render() {
+    body.innerHTML = "";
+    rows.forEach(function (r, idx) {
+      const tr = el("tr");
+      if (r.state === "added") tr.className = "adj-added";
+      r._cells = {};
+
+      const c0 = cell(tr);
+      if (editing) {
+        const del = el("button", { type: "button", class: "adj-del", title: T.delete, "aria-label": T.delete }, "✕");
+        del.addEventListener("click", function () { rows.splice(idx, 1); markAdjusted(); render(); });
+        c0.appendChild(del);
+      }
+      c0.appendChild(document.createTextNode(r.item_no ?? ""));
+
+      // 項目
+      const tdDesc = cell(tr); r._cells.description = tdDesc;
+      if (editing) tdDesc.appendChild(input(r, "description", false, T.item)); else tdDesc.textContent = r.description || "";
+      if (r.note) { tdDesc.appendChild(el("br")); tdDesc.appendChild(el("span", { class: "muted" }, r.note)); }
+
+      // 材料：調整時可從下拉選單換產品，也可以直接修改文字
+      const tdMat = cell(tr); r._cells.material = tdMat;
+      if (editing) {
+        const sel = productSelect(r);
+        if (sel) tdMat.appendChild(sel);
+        tdMat.appendChild(input(r, "material", false, T.material));
+      } else {
+        tdMat.textContent = r.material || "";
+      }
+      if (r.offSpec) tdMat.appendChild(el("span", { class: "adj-warn" }, "⚠ " + T.off_spec));
+
+      const tdMethod = cell(tr);
+      tdMethod.appendChild(document.createTextNode(r.state === "added" ? T.added : (r.method || "")));
+      tdMethod.appendChild(el("br"));
+      r._cells.basis = el("span", { class: "muted" }); tdMethod.appendChild(r._cells.basis);
+
+      r._cells.qty = cell(tr, "num");
+      if (editing) r._cells.qty.appendChild(input(r, "qty", true, T.qty));
+      r._cells.unit = cell(tr);
+      if (editing) r._cells.unit.appendChild(input(r, "unit", false, T.unit)); else r._cells.unit.textContent = r.unit || "";
+
+      if (area !== null) { r._cells.totalQty = cell(tr, "num"); r._cells.order = cell(tr, "num"); }
+      if (showPrices) {
+        r._cells.price = cell(tr, "num");
+        if (editing) r._cells.price.appendChild(input(r, "unit_price", true, T.price));
+        r._cells.cost = cell(tr, "num");
+        if (area !== null) r._cells.totalCost = cell(tr, "num");
+      }
+      body.appendChild(tr);
+      r._tr = tr;
+      refreshRow(r);
+    });
+    refreshTotals();
+  }
+
+  function refreshRow(r) {
+    const c = compute(r), cs = r._cells;
+    cs.basis.textContent = (r.qtyEdited && r.state !== "added") ? T.manual : (r.basis || "");
+    if (!editing) cs.qty.textContent = c.qty === null ? T.tbc : fmt(c.qty, 4);
+    if (cs.totalQty) cs.totalQty.textContent = c.totalQty === null ? T.tbc : fmt(c.totalQty, 2);
+    if (cs.order) { cs.order.innerHTML = ""; cs.order.appendChild(el("strong", {}, fmtOrder(c.order))); }
+    if (cs.price && !editing) {
+      cs.price.innerHTML = "";
+      const p = num(r.unit_price);
+      cs.price.appendChild(document.createTextNode(valid(p) ? fmt(p, 2) : T.na));
+      if (valid(p) && r.supplier) {
+        cs.price.appendChild(el("br"));
+        cs.price.appendChild(el("span", { class: "muted" }, r.supplier + " " + (r.price_date || "")));
+      }
+    }
+    if (cs.cost) cs.cost.textContent = fmt(c.cost, 2);
+    if (cs.totalCost) cs.totalCost.textContent = fmt(c.totalCost, 2);
+    // 標示改過的格子
+    ["description", "material", "unit"].forEach(function (f) { cs[f] && cs[f].classList.toggle("adj-changed", changed(r, f)); });
+    const o = original[r._orig] || {};
+    cs.qty.classList.toggle("adj-changed", r.state !== "added" && c.qty !== (o.qty_display == null ? null : Number(o.qty_display)));
+    if (cs.price) cs.price.classList.toggle("adj-changed", r.state !== "added" && num(r.unit_price) !== num(o.unit_price));
+    const pend = c.qty === null || (showPrices && c.cost === null);
+    r._tr.classList.toggle("pending", pend);
+  }
+
+  function refreshTotals() {
+    if (!showPrices) return;
+    let sqm = 0, all = 0;
+    rows.forEach(function (r) { const c = compute(r); if (c.cost !== null) sqm += c.cost; if (c.totalCost !== null) all += c.totalCost; });
+    const a = document.getElementById("total-sqm"), b = document.getElementById("total-all");
+    if (a) a.textContent = fmt(sqm, 2);
+    if (b) b.textContent = fmt(all, 2);
+  }
+
+  btnToggle.addEventListener("click", function () {
+    editing = !editing;
+    btnToggle.textContent = editing ? T.done : T.adjust;
+    btnAdd.hidden = btnReset.hidden = !editing;
+    render();
+  });
+  btnAdd.addEventListener("click", function () {
+    const next = rows.reduce((m, r) => Math.max(m, Number(r.item_no) || 0), 0) + 1;
+    rows.push({ state: "added", item_no: next, description: "", material: "", unit: "", qty: "", qty_display: null,
+                unit_price: "", supplier: "", price_date: "", method: "", basis: "", note: "", round_up: true, numDirty: true });
+    markAdjusted(); render();
+    const last = body.lastElementChild && body.lastElementChild.querySelector("input");
+    if (last) last.focus();
+  });
+  btnReset.addEventListener("click", function () {
+    if (!window.confirm(T.reset_confirm)) return;
+    rows = clone(original); rows.forEach((r, i) => r._orig = i);
+    adjusted = false; exported = true; status.hidden = true;
+    if (pendingBox) pendingBox.hidden = false;
+    render();
+  });
+  rows.forEach((r, i) => r._orig = i);
+
+  // 有調整時，匯出改用「調整後」的內容（POST，不經網址）
+  document.getElementById("export-btn").addEventListener("click", function (e) {
+    if (!adjusted) return;
+    e.preventDefault();
+    const bad = rows.some(r => isNaN(num(r.qty)) || (showPrices && isNaN(num(r.unit_price))));
+    if (bad) { window.alert(T.invalid); return; }
+    const lines = rows.map(function (r) {
+      const o = { item_no: r.item_no, description: r.description, material: r.material, unit: r.unit,
+                  qty: r.qty ?? "", round_up: r.round_up, state: r.state, method: r.method,
+                  basis: (r.qtyEdited && r.state !== "added") ? T.manual : r.basis, note: r.note,
+                  code: r.code || "", replaced_from: r.replaced_from || "", off_spec: !!r.offSpec };
+      if (showPrices) { o.unit_price = r.unit_price ?? ""; o.supplier = r.supplier; o.price_date = r.price_date; }
+      return o;
+    });
+    document.getElementById("adj-payload").value = JSON.stringify({
+      brand: D.brand, system_type: D.system_type, hours: D.hours, view: D.view, area: D.area, lines: lines });
+    exported = true;                          // 先設定，避免提交時觸發離開提示
+    document.getElementById("adj-export-form").submit();
+  });
+
+  // 有未匯出的調整時離開頁面，先確認
+  window.addEventListener("beforeunload", function (e) {
+    if (adjusted && !exported) { e.preventDefault(); e.returnValue = ""; }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

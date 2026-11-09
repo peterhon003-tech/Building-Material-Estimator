@@ -1,10 +1,11 @@
+import json
 from datetime import date
 from decimal import Decimal
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -18,6 +19,17 @@ from .middleware import SESSION_KEY as LANGUAGE_SESSION_KEY
 from .models import FireSystem, Material, MaterialPrice
 
 IMPORT_SESSION_KEY = "price_import_rows"
+
+# 臨時調整功能在網頁上用到的文字（按目前語言翻譯後交給 JavaScript）
+ADJUST_TEXT = {
+    "adjust": "調整", "done": "完成調整", "delete": "刪除這一項",
+    "reset_confirm": "還原到系統計算的結果？所有調整會被清除。",
+    "manual": "手動輸入", "added": "手動新增", "tbc": "待定", "na": "待提供",
+    "invalid": "有數字格式不正確（標示紅色），請修正後再匯出。",
+    "item": "項目", "material": "材料 / 規格", "unit": "單位", "qty": "每 m² 用量", "price": "單價 (HK$)",
+    "original": "原配方", "off_spec": "不在測試報告配方內，請確認是否符合耐火要求",
+    "overwrite": "更換產品會覆蓋這一行的修改，繼續？", "choose": "選擇材料…",
+}
 PRICE_VIEW_PERM = "estimator.view_materialprice"
 
 
@@ -64,6 +76,7 @@ def calculator(request):
     area, area_error = parse_area(area_raw)
 
     result = None
+    adjust_data = None
     not_available = False
     if brand and system_type and hours:
         try:
@@ -71,7 +84,11 @@ def calculator(request):
         except ValueError:
             system = None
         if system:
-            result = services.calculate(system, include_prices=show_prices(request), area=area)
+            result = services.calculate(system, include_prices=show_prices(request), area=area,
+                                        with_options=True)
+            adjust_data = services.adjust_payload(
+                result, brand, system_type, hours,
+                "material" if request.GET.get("view") == "material" else "price")
         else:
             not_available = True
 
@@ -88,6 +105,8 @@ def calculator(request):
         "view_mode": "material" if request.GET.get("view") == "material" else "price",
         "area_raw": area_raw,
         "area_error": area_error,
+        "adjust_data": adjust_data,
+        "adjust_i18n": {k: tr(v) for k, v in ADJUST_TEXT.items()},
     })
 
 
@@ -107,15 +126,44 @@ def calculator_export(request):
     area, _ = parse_area(request.GET.get("area", ""))
     result = services.calculate(system, include_prices=with_prices, area=area)
     content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices, t=tr)
+    return _xlsx_response(content, system, with_prices, result.on_date)
+
+
+def _xlsx_response(content, system, with_prices, on_date, adjusted=False):
     kind = "price" if with_prices else "material"
+    extra = "-adjusted" if adjusted else ""
     filename = (f"{system.brand}-{dict(FireSystem.TYPE_CHOICES)[system.system_type]}-"
-                f"{system.fire_rating_hours}hr-{kind}-{result.on_date:%Y-%m-%d}.xlsx")
+                f"{system.fire_rating_hours}hr-{kind}{extra}-{on_date:%Y-%m-%d}.xlsx")
     resp = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     resp["Content-Disposition"] = f'attachment; filename="{filename}"'
     return resp
+
+
+@require_POST
+@login_required
+def calculator_export_adjusted(request):
+    """匯出臨時調整後的結果。調整內容由網頁送來，只用於這次匯出，不會儲存。"""
+    try:
+        data = json.loads(request.POST.get("payload", ""))
+        system = services.find_system(str(data.get("brand", "")), int(data.get("system_type")),
+                                      int(data.get("hours")))
+    except (ValueError, TypeError, AttributeError):
+        return HttpResponseBadRequest(tr("資料格式不正確"))
+    if not system:
+        return HttpResponseBadRequest(tr("請先選擇有效的品牌、系統和耐火時間。"))
+    # 價錢權限由伺服器決定：沒有權限或選了「只看材料」，送來的價錢一律忽略
+    with_prices = can_see_price(request.user) and data.get("view") != "material"
+    area, _ = parse_area(str(data.get("area") or ""))
+    try:
+        result = services.adjusted_result(system, area, data.get("lines"), with_prices, t=tr)
+    except ValueError as e:
+        return HttpResponseBadRequest(str(e))
+    content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices,
+                              t=tr, adjusted=True)
+    return _xlsx_response(content, system, with_prices, result.on_date, adjusted=True)
 
 
 # ---------- 原料價錢 ----------

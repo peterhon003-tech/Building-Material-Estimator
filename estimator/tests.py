@@ -577,3 +577,170 @@ class SessionTests(TestCase):
         cookie = resp.cookies[settings.SESSION_COOKIE_NAME]
         self.assertEqual(cookie["max-age"], "")
         self.assertEqual(cookie["expires"], "")
+
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class AdjustTests(TestCase):
+    """臨時調整：頁面提供調整資料；匯出調整後的 Excel；不寫入數據庫；價錢權限由伺服器控制。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.estimator = User.objects.create_user("adj_est", password="pw-12345-x")
+        cls.estimator.groups.add(Group.objects.get(name="估價員"))
+        cls.plain = User.objects.create_user("adj_plain", password="pw-12345-x")
+        cls.params = {"brand": "PROMAT", "system_type": "1", "hours": "2", "area": "100"}
+
+    def _payload(self, view="price"):
+        import json
+        return {"payload": json.dumps({
+            "brand": "PROMAT", "system_type": "1", "hours": "2", "view": view, "area": "100",
+            "lines": [
+                {"item_no": 1, "description": "Promat 板", "material": "Promatect-H 9mm", "unit": "張",
+                 "qty": "0.3695243214189734", "unit_price": "330", "round_up": True, "state": "edited"},
+                {"item_no": 9, "description": "運輸費", "material": "", "unit": "次",
+                 "qty": "0.01", "unit_price": "500", "round_up": False, "state": "added"},
+            ]})}
+
+    def _values(self, resp):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        ws = load_workbook(BytesIO(resp.content)).active
+        return [c for row in ws.iter_rows(values_only=True) for c in row if c is not None]
+
+    def _adjust_data(self, resp):
+        """只解析頁面上的調整資料（JSON），不搜尋整頁，避免被 JavaScript 程式碼的文字誤導。"""
+        import json, re
+        m = re.search(r'<script id="adjust-data" type="application/json">(.*?)</script>',
+                      resp.content.decode(), re.S)
+        self.assertIsNotNone(m, "頁面沒有調整資料")
+        return json.loads(m.group(1))
+
+    def test_page_has_adjust_data_with_prices(self):
+        self.client.force_login(self.estimator)
+        resp = self.client.get(reverse("calculator"), self.params)
+        self.assertContains(resp, 'id="adj-toggle"')
+        data = self._adjust_data(resp)
+        self.assertTrue(data["show_prices"])
+        board = next(l for l in data["lines"] if l["item_no"] == 1)
+        self.assertEqual(board["unit_price"], "350.00")
+
+    def test_page_adjust_data_without_prices_for_plain_user(self):
+        self.client.force_login(self.plain)
+        data = self._adjust_data(self.client.get(reverse("calculator"), self.params))
+        self.assertFalse(data["show_prices"])
+        price_keys = {"unit_price", "cost", "total_cost", "supplier", "price_date"}
+        for line in data["lines"]:
+            self.assertFalse(price_keys & set(line), f"第 {line['item_no']} 項含有價錢資料")
+
+    def test_export_adjusted_with_prices(self):
+        self.client.force_login(self.estimator)
+        before = MaterialPrice.objects.count()
+        resp = self.client.post(reverse("calculator_export_adjusted"), self._payload())
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("adjusted", resp["Content-Disposition"])
+        values = self._values(resp)
+        self.assertIn("已手動調整（未儲存到系統）", values)
+        self.assertIn(12194.30, values)                 # 0.36952… × 100 × 330
+        self.assertIn("運輸費", values)
+        self.assertIn(500, values)
+        self.assertEqual(MaterialPrice.objects.count(), before)          # 沒有寫入數據庫
+        self.assertEqual(Material.objects.get(code="PTH-09").current_price().unit_price, Decimal("350.00"))
+
+    def test_plain_user_prices_ignored(self):
+        self.client.force_login(self.plain)
+        resp = self.client.post(reverse("calculator_export_adjusted"), self._payload())
+        values = self._values(resp)
+        self.assertIn("運輸費", values)
+        self.assertNotIn(12194.30, values)
+        self.assertNotIn(330, values)
+        self.assertNotIn("單價 (HK$)", values)
+
+    def test_material_view_ignores_prices(self):
+        self.client.force_login(self.estimator)
+        values = self._values(self.client.post(reverse("calculator_export_adjusted"), self._payload("material")))
+        self.assertNotIn(330, values)
+
+    def test_bad_payload(self):
+        self.client.force_login(self.estimator)
+        self.assertEqual(self.client.post(reverse("calculator_export_adjusted"), {"payload": "x"}).status_code, 400)
+        import json
+        bad = json.loads(self._payload()["payload"])
+        bad["lines"][0]["qty"] = "abc"
+        resp = self.client.post(reverse("calculator_export_adjusted"), {"payload": json.dumps(bad)})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_get_not_allowed_and_login_required(self):
+        self.client.force_login(self.estimator)
+        self.assertEqual(self.client.get(reverse("calculator_export_adjusted")).status_code, 405)
+        self.client.logout()
+        resp = self.client.post(reverse("calculator_export_adjusted"), self._payload())
+        self.assertEqual(resp.status_code, 302)
+
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class ProductOptionTests(TestCase):
+    """臨時調整的產品下拉選單：同類別可選、用量由伺服器計算、價錢權限、匯出備註。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.estimator = User.objects.create_user("po_est", password="pw-12345-x")
+        cls.estimator.groups.add(Group.objects.get(name="估價員"))
+        cls.plain = User.objects.create_user("po_plain", password="pw-12345-x")
+        cls.params = {"brand": "PROMAT", "system_type": "1", "hours": "2", "area": "100"}
+
+    def _data(self, user):
+        import json, re
+        self.client.force_login(user)
+        html = self.client.get(reverse("calculator"), self.params).content.decode()
+        m = re.search(r'<script id="adjust-data" type="application/json">(.*?)</script>', html, re.S)
+        return json.loads(m.group(1))
+
+    def test_channel_options_same_category_original_first(self):
+        data = self._data(self.estimator)
+        channel = next(l for l in data["lines"] if l["item_no"] == 2)
+        codes = [o["code"] for o in channel["options"]]
+        self.assertEqual(codes[0], "CH-50x50x50x0.8")
+        self.assertTrue(channel["options"][0]["original"])
+        self.assertEqual(set(codes), {"CH-30x50x30x0.6", "CH-50x50x50x0.8", "CH-100x50x100x1.0"})
+        heavy = next(o for o in channel["options"] if o["code"] == "CH-100x50x100x1.0")
+        self.assertFalse(heavy["original"])
+        self.assertEqual(heavy["unit_price"], "33.00")
+        self.assertEqual(round(float(heavy["qty"]), 4), 0.7390)        # 伺服器按該組件的間距計好
+
+    def test_board_options_only_boards(self):
+        data = self._data(self.estimator)
+        board = next(l for l in data["lines"] if l["item_no"] == 1)
+        self.assertTrue(all(o["code"].startswith(("PTH-", "PRM60-")) for o in board["options"]))
+
+    def test_catalogue_has_all_materials(self):
+        data = self._data(self.estimator)
+        codes = {c["code"] for c in data["catalogue"]}
+        self.assertEqual(codes, set(Material.objects.filter(active=True).values_list("code", flat=True)))
+
+    def test_no_prices_in_options_for_plain_user(self):
+        data = self._data(self.plain)
+        price_keys = {"unit_price", "supplier", "price_date"}
+        for line in data["lines"]:
+            for o in line["options"]:
+                self.assertFalse(price_keys & set(o))
+        for c in data["catalogue"]:
+            self.assertFalse(price_keys & set(c))
+
+    def test_export_notes_replacement_and_warning(self):
+        import json
+        from io import BytesIO
+        from openpyxl import load_workbook
+        self.client.force_login(self.estimator)
+        payload = {"brand": "PROMAT", "system_type": "1", "hours": "2", "view": "price", "area": "100",
+                   "lines": [{"item_no": 2, "description": "G.I. 槽鐵", "material": "G.I. 槽鐵 100×50×100×1.0mm × 8尺",
+                              "unit": "支", "qty": "0.7390486428", "unit_price": "33", "round_up": True,
+                              "state": "edited", "code": "CH-100x50x100x1.0",
+                              "replaced_from": "G.I. 槽鐵 50×50×50×0.8mm × 8尺", "off_spec": True}]}
+        resp = self.client.post(reverse("calculator_export_adjusted"), {"payload": json.dumps(payload)})
+        self.assertEqual(resp.status_code, 200)
+        ws = load_workbook(BytesIO(resp.content)).active
+        notes = " ".join(str(c) for row in ws.iter_rows(values_only=True) for c in row if isinstance(c, str))
+        self.assertIn("已替換：G.I. 槽鐵 50×50×50×0.8mm × 8尺 → G.I. 槽鐵 100×50×100×1.0mm × 8尺", notes)
+        self.assertIn("不在測試報告配方內", notes)

@@ -19,7 +19,7 @@ def _no_translate(text, **kwargs):
     return text.format(**kwargs) if kwargs else text
 
 
-def build_calc_xlsx(result, user="", show_prices=True, t=_no_translate):
+def build_calc_xlsx(result, user="", show_prices=True, t=_no_translate, adjusted=False):
     """show_prices=False：不包括任何價錢欄和合計（給沒有價錢權限的用戶）。
     t：翻譯函數（estimator.i18n.tr），令 Excel 內容跟隨介面語言。"""
     has_area = result.area is not None
@@ -47,6 +47,7 @@ def build_calc_xlsx(result, user="", show_prices=True, t=_no_translate):
         *([(t("價錢日期"), result.on_date.isoformat())] if show_prices else []),
         *([(t("總面積"), f"{result.area} m²")] if has_area else []),
         (t("匯出人"), user),
+        *([(t("備註"), t("已手動調整（未儲存到系統）"))] if adjusted else []),
     ]
     for k, v in info:
         ws.append([k, v])
