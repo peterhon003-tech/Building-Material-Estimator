@@ -221,3 +221,12 @@ python manage.py runserver
   - 材料和組件在「系統管理」有英文欄：材料的「英文名稱」「英文規格」，組件的「英文項目」「英文備註」。留空就顯示中文。初始數據已預先填好英文。
 - **Excel 匯出**跟隨用戶當時的語言。**Excel 批量更新範本**用任何語言下載都可以上載，系統會辨認三種語言的欄名。
 - 測試：`docker compose exec web python manage.py test estimator`
+
+---
+
+## 12. 關閉瀏覽器即登出
+
+`config/settings.py` 設定了 `SESSION_EXPIRE_AT_BROWSER_CLOSE = True`：關閉瀏覽器後再打開，要重新登入。
+
+- 要關閉**所有**瀏覽器視窗才算關閉；只關一個分頁不會登出。
+- Chrome / Edge 如果開啟了「繼續瀏覽上次的網頁」（Continue where you left off），瀏覽器會還原 cookie，可能仍然保持登入。需要時請關閉這個設定，或按「登出」。

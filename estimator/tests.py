@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth.models import Group, User
 from django.core.management import call_command
+from django.conf import settings
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -564,3 +565,15 @@ class LanguageTests(TestCase):
         mig.set_existing_users_to_english(global_apps, None)
         self.assertEqual(UserProfile.objects.get(user=self.zh_user).language, "en")
         self.assertEqual(UserProfile.objects.get(user=self.user).language, "en")
+
+
+class SessionTests(TestCase):
+    """關閉瀏覽器即登出：登入後的 session cookie 沒有到期日（瀏覽器關閉就刪除）。"""
+
+    def test_session_cookie_is_browser_session_only(self):
+        User.objects.create_user("sess_user", password="pw-12345-x")
+        resp = self.client.post(reverse("login"), {"username": "sess_user", "password": "pw-12345-x"})
+        self.assertEqual(resp.status_code, 302)                     # 登入成功
+        cookie = resp.cookies[settings.SESSION_COOKIE_NAME]
+        self.assertEqual(cookie["max-age"], "")
+        self.assertEqual(cookie["expires"], "")

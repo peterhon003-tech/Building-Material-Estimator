@@ -102,6 +102,9 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# 關閉瀏覽器即登出：登入用的 session cookie 不設到期日，瀏覽器關閉後就會刪除
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "calculator"
 LOGOUT_REDIRECT_URL = "login"
