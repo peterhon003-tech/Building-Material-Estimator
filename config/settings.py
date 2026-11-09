@@ -87,7 +87,8 @@ LANGUAGES = [
     ("zh-hans", "简体中文"),
     ("en", "English"),
 ]
-LANGUAGE_COOKIE_NAME = "fireboard_language"
+# 沒有設定預設語言的帳戶、以及登入頁，使用這個語言
+FB_DEFAULT_LANGUAGE = "en"
 TIME_ZONE = "Asia/Hong_Kong"
 USE_I18N = True
 USE_TZ = True

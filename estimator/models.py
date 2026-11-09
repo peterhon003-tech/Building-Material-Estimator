@@ -4,7 +4,7 @@ from django.conf import settings
 from django.db import models
 
 from . import calc
-from .i18n import LANGUAGES, ZH_HANT, localized, tl, tr
+from .i18n import EN_CODE, LANGUAGES, localized, tl, tr
 
 
 class Material(models.Model):
@@ -160,13 +160,16 @@ class SystemComponent(models.Model):
 
 
 class UserProfile(models.Model):
-    """每個用戶的設定，現在只有介面語言。"""
+    """每個用戶的設定。預設語言 = 每次登入時使用的語言。"""
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile",
         verbose_name=tl("用戶"),
     )
-    language = models.CharField(tl("介面語言"), max_length=10, choices=LANGUAGES, default=ZH_HANT)
+    language = models.CharField(
+        tl("預設語言"), max_length=10, choices=LANGUAGES, default=EN_CODE,
+        help_text=tl("每次登入時使用的語言。登入後在右上角切換，只維持到登出。"),
+    )
 
     class Meta:
         verbose_name = tl("用戶設定")

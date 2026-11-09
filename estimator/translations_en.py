@@ -23,7 +23,9 @@ EN = {
     "用戶名稱": "Username",
     "密碼": "Password",
     "用戶名稱或密碼不正確，請再試。": "Incorrect username or password. Please try again.",
-    "介面語言": "Interface language",
+    "預設語言": "Default language",
+    "每次登入時使用的語言。登入後在右上角切換，只維持到登出。":
+        "Language used at each login. Switching at the top right only lasts until you log out.",
     "用戶": "User",
     "用戶設定": "User settings",
 

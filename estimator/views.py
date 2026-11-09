@@ -1,7 +1,6 @@
 from datetime import date
 from decimal import Decimal
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.db import transaction
@@ -15,7 +14,8 @@ from .export import build_calc_xlsx
 from . import services
 from .forms import MaterialForm, PriceForm, PriceImportForm
 from .i18n import LANGUAGE_CODES, all_languages, localized, tr
-from .models import FireSystem, Material, MaterialPrice, UserProfile
+from .middleware import SESSION_KEY as LANGUAGE_SESSION_KEY
+from .models import FireSystem, Material, MaterialPrice
 
 IMPORT_SESSION_KEY = "price_import_rows"
 PRICE_VIEW_PERM = "estimator.view_materialprice"
@@ -266,7 +266,8 @@ def price_import_confirm(request):
 
 @require_POST
 def set_language(request):
-    """切換介面語言。已登入：存入帳戶；未登入（登入頁）：只存 cookie。"""
+    """右上角切換語言：只維持到登出（存在 session），不改帳戶的預設語言。
+    帳戶預設語言由管理員在「系統管理 → 用戶 → 用戶設定」設定。"""
     lang = request.POST.get("language", "")
     nxt = request.POST.get("next") or "/"
     if not url_has_allowed_host_and_scheme(nxt, allowed_hosts={request.get_host()},
@@ -274,8 +275,5 @@ def set_language(request):
         nxt = "/"
     response = redirect(nxt)
     if lang in LANGUAGE_CODES:
-        if request.user.is_authenticated:
-            UserProfile.objects.update_or_create(user=request.user, defaults={"language": lang})
-        response.set_cookie(settings.LANGUAGE_COOKIE_NAME, lang, max_age=365 * 24 * 3600,
-                            samesite="Lax")
+        request.session[LANGUAGE_SESSION_KEY] = lang
     return response
