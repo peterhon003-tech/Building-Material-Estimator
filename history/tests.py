@@ -13,7 +13,8 @@ from .models import CalcRecord
 PARAMS = {"brand": "PROMAT", "system_type": "1", "hours": "2", "area": "100"}
 
 
-@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+# 測試假設功能已開啟；settings.py 關閉了也照樣測試（停用時的行為另有測試）
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant", FB_CALC_HISTORY_ENABLED=True)
 class HistoryTests(TestCase):
     @classmethod
     def setUpTestData(cls):

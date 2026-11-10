@@ -107,11 +107,11 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # 自動計價紀錄：開關及保留日數
-FB_CALC_HISTORY_ENABLED = True
+FB_CALC_HISTORY_ENABLED = False
 FB_CALC_HISTORY_DAYS = 180
 
 # 報價（quotes app）：False = 停用（隱藏選單和按鈕，網址顯示 404），數據保留
-FB_QUOTES_ENABLED = True
+FB_QUOTES_ENABLED = False
 
 # 關閉瀏覽器即登出：登入用的 session cookie 不設到期日，瀏覽器關閉後就會刪除
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True

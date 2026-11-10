@@ -58,7 +58,7 @@ def quote_list(request):
     qs = Quotation.objects.select_related("created_by").annotate(
         item_count=Count("items", distinct=True),
         priced_total=Sum("items__grand_total", filter=Q(items__include_prices=True)),
-    )
+    ).order_by("-updated_at", "-pk")          # 有 annotate（GROUP BY）時 Django 不會用 Meta.ordering
     status = request.GET.get("status", "")
     if status in dict(Quotation.STATUS_CHOICES):
         qs = qs.filter(status=status)

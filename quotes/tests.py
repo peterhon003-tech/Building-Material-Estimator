@@ -21,7 +21,8 @@ LINE_KEYS = ("item_no", "description", "material", "unit", "qty", "round_up", "s
              "basis", "note", "code", "unit_price", "supplier", "price_date")
 
 
-@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+# 測試假設功能已開啟；settings.py 關閉了也照樣測試（停用時的行為見 QuoteSwitchTests）
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant", FB_QUOTES_ENABLED=True, FB_CALC_HISTORY_ENABLED=True)
 class QuoteTests(TestCase):
     @classmethod
     def setUpTestData(cls):
@@ -392,6 +393,14 @@ class QuoteTests(TestCase):
         self.assertEqual({q.pk for q in resp.context["page"].object_list}, {quote.pk, rev_b.pk})
         self.assertEqual(resp.context["page"].object_list[0].item_count, 1)
 
+    def test_list_newest_first(self):
+        old = services.create_quotation(self.est)
+        new = services.create_quotation(self.est)
+        services.touch(old, self.est)                     # 最近修改的排最前
+        self.client.force_login(self.est)
+        resp = self.client.get(reverse("quote_list"))
+        self.assertEqual([q.pk for q in resp.context["page"].object_list], [old.pk, new.pk])
+
     # ---------- 匯出 Excel ----------
     def test_export_with_and_without_prices(self):
         quote = self.new_quote()
@@ -441,7 +450,7 @@ class QuoteTests(TestCase):
         self.assertContains(resp, f"Quotation {quote.label}")
 
 
-@override_settings(FB_DEFAULT_LANGUAGE="zh-hant", FB_QUOTES_ENABLED=False)
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant", FB_QUOTES_ENABLED=False, FB_CALC_HISTORY_ENABLED=True)
 class QuoteSwitchTests(TestCase):
     """FB_QUOTES_ENABLED = False：隱藏選單和按鈕，網址 404，數據保留。"""
 
