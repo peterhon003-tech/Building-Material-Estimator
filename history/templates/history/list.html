@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "計價紀錄" %} · {% t "防火板計價系統" %}{% endblock %}
+{% block content %}
+<h1>{% t "計價紀錄" %}</h1>
+<p class="muted">{% t "每次計價都會自動記錄，保留 {n} 日後自動刪除。同一條件 10 分鐘內重複計算只記一次。" n=keep_days %}</p>
+
+{% if users %}
+<form method="get" class="card" style="padding:10px 16px">
+  <label>{% t "用戶" %}
+    <select name="user" onchange="this.form.submit()">
+      <option value="">{% t "所有人" %}</option>
+      <option value="me" {% if selected_user == "me" %}selected{% endif %}>{% t "只看我的" %}</option>
+      {% for uid, uname in users %}<option value="{{ uid }}" {% if selected_user == uid|stringformat:"s" %}selected{% endif %}>{{ uname }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
+
+<table>
+  <thead>
+    <tr>
+      <th>{% t "時間" %}</th>
+      {% if users %}<th>{% t "用戶" %}</th>{% endif %}
+      <th>{% t "系統" %}</th><th class="num">{% t "總面積" %}</th>
+      {% if can_see_price %}<th class="num">{% t "每 m² 合計" %} (HK$)</th><th class="num">{% t "合計" %} (HK$)</th>{% endif %}
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for rec in page %}
+    <tr>
+      <td style="white-space:nowrap">{{ rec.created_at|date:"Y-m-d H:i" }}</td>
+      {% if users %}<td>{{ rec.user.username|default:"—" }}</td>{% endif %}
+      <td>{{ rec.system_label }}{% if rec.view_mode == "material" %} <span class="tag">{% t "只看材料" %}</span>{% endif %}</td>
+      <td class="num">{% if rec.area is not None %}{{ rec.area|floatformat:2 }} m²{% else %}—{% endif %}</td>
+      {% if can_see_price %}
+      <td class="num">{% if rec.include_prices and rec.total_per_sqm is not None %}{{ rec.total_per_sqm|floatformat:2 }}{% else %}—{% endif %}</td>
+      <td class="num">{% if rec.include_prices and rec.grand_total is not None %}{{ rec.grand_total|floatformat:2 }}{% else %}—{% endif %}</td>
+      {% endif %}
+      <td style="white-space:nowrap"><a href="{% url 'history_detail' rec.pk %}">{% t "查看" %}</a> · <a href="{% url 'calculator' %}?{{ rec.calculator_query }}">{% t "重新計算" %}</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="muted">{% t "未有計價紀錄" %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if page.has_other_pages %}
+<p style="margin-top:12px">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if selected_user %}&user={{ selected_user|urlencode }}{% endif %}">← {% t "上一頁" %}</a>{% endif %}
+  <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if selected_user %}&user={{ selected_user|urlencode }}{% endif %}">{% t "下一頁" %} →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

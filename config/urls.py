@@ -10,5 +10,6 @@ admin.site.index_title = tl("系統管理")
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),
+    path("history/", include("history.urls")),     # 自動計價紀錄（可移除）
     path("", include("estimator.urls")),
 ]

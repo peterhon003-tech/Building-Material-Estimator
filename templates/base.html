@@ -46,6 +46,7 @@
     {% if user.is_authenticated %}
     <nav>
       <a href="{% url 'calculator' %}" class="{% if request.resolver_match.url_name == 'calculator' %}on{% endif %}">{% t "計價" %}</a>
+      {% if fb_history_url %}<a href="{{ fb_history_url }}" class="{% if request.resolver_match.url_name|slice:':8' == 'history_' %}on{% endif %}">{% t "計價紀錄" %}</a>{% endif %}
       {% if perms.estimator.view_materialprice %}<a href="{% url 'price_list' %}" class="{% if 'price' in request.resolver_match.url_name %}on{% endif %}">{% t "原料價錢" %}</a>{% endif %}
       {% if user.is_staff %}<a href="{% url 'admin:index' %}">{% t "系統管理" %}</a>{% endif %}
     </nav>

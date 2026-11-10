@@ -243,3 +243,25 @@ python manage.py runserver
 - 「匯出 Excel」會匯出調整後的內容，並註明「已手動調整（未儲存到系統）」
 - **調整不會儲存到系統**：原料價錢、配方和其他人的結果都不受影響；重新整理或離開頁面時調整會消失（有未匯出的調整時會先提示）
 - 價錢權限由伺服器控制：沒有價錢權限或選了「只看材料」，送出的價錢會被忽略
+
+---
+
+## 14. 自動計價紀錄（保留 180 日）
+
+- 每次在計價頁算出結果都會**自動記錄**（當時的輸入、每項明細、合計的快照）。同一用戶 10 分鐘內用相同條件重複計算，只更新同一筆。
+- 頂部選單「**計價紀錄**」：每人只看自己的；系統管理員（職員狀態）可以看所有人，並按用戶篩選。沒有價錢權限的人看不到價錢。
+- 「查看」顯示當時的快照，之後加價也不會改變；「重新計算」用現時價錢再計一次。
+- **超過 180 日自動刪除**（每次有新紀錄時順便清理）。也可以手動執行：`docker compose exec web python manage.py purge_history`
+- 設定（`config/settings.py`）：
+  - `FB_CALC_HISTORY_ENABLED = True`：改為 `False` 即停用（不再記錄、隱藏選單，數據保留）
+  - `FB_CALC_HISTORY_DAYS = 180`：保留日數
+- 測試：`docker compose exec web python manage.py test estimator history`
+
+### 完全移除這個功能
+這個功能放在獨立的 `history` 資料夾，`estimator` 只透過 `estimator/hooks.py` 的通知點連接，所以移除時不用改計價程式。**次序很重要：先刪數據表，再刪程式。**
+1. 備份數據庫：`docker compose exec db pg_dump -U fireboard -Fc -f /tmp/before-remove.dump fireboard`
+2. 刪除數據表（程式碼仍要存在）：`docker compose exec web python manage.py migrate history zero`
+3. 修改 `config/settings.py`：在 `INSTALLED_APPS` 刪除 `"history"`，在 `context_processors` 刪除 `"history.context_processors.history_nav"`，刪除 `FB_CALC_HISTORY_*` 兩行
+4. 修改 `config/urls.py`：刪除 `path("history/", ...)` 一行
+5. 刪除 `history` 資料夾
+6. `docker compose up -d --build`，再執行 `docker compose exec web python manage.py test estimator`

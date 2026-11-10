@@ -13,6 +13,7 @@ from django.views.decorators.http import require_POST
 from . import price_import as importer
 from .export import build_calc_xlsx
 from . import services
+from .hooks import calculation_done
 from .forms import MaterialForm, PriceForm, PriceImportForm
 from .i18n import LANGUAGE_CODES, all_languages, localized, tr
 from .middleware import SESSION_KEY as LANGUAGE_SESSION_KEY
@@ -89,6 +90,11 @@ def calculator(request):
             adjust_data = services.adjust_payload(
                 result, brand, system_type, hours,
                 "material" if request.GET.get("view") == "material" else "price")
+            # 通知附加功能（例如計價紀錄）；沒有任何接收者時甚麼都不做
+            calculation_done.send(sender=None, request=request, result=result, params={
+                "brand": brand, "system_type": system_type, "hours": hours, "area": area,
+                "view": "material" if request.GET.get("view") == "material" else "price",
+            })
         else:
             not_available = True
 

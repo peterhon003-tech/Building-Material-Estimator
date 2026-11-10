@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "計價紀錄" %} · {{ rec.system_label }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'history_list' %}">← {% t "返回計價紀錄" %}</a></p>
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+    <h2 style="margin:0">{{ rec.system_label }}</h2>
+    <a class="btn" href="{% url 'calculator' %}?{{ rec.calculator_query }}">{% t "用現時價錢重新計算" %}</a>
+  </div>
+  <p class="muted" style="margin:6px 0 0">
+    {{ rec.created_at|date:"Y-m-d H:i" }} · {{ rec.user.username|default:"—" }} · {% t "測試報告" %} {{ rec.report_no }}
+    {% if rec.area is not None %} · <strong>{% t "總面積" %} {{ rec.area|floatformat:2 }} m²</strong>{% endif %}
+  </p>
+  <p class="muted" style="margin:6px 0 0">{% t "這是當時的計算結果（快照），之後的價錢或配方改動不會影響這裡的數字。紀錄會在 {n} 日後自動刪除。" n=keep_days %}</p>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>{% t "項目" %}</th><th>{% t "材料 / 規格" %}</th>
+      <th class="num">{% t "每 m² 用量" %}</th><th>{% t "單位" %}</th>
+      {% if rec.area is not None %}<th class="num">{% t "總用量" %}</th><th class="num">{% t "訂購數量" %}</th>{% endif %}
+      {% if show_prices %}<th class="num">{% t "單價 (HK$)" %}</th><th class="num">{% t "每 m² 價錢 (HK$)" %}</th>{% if rec.area is not None %}<th class="num">{% t "總價 (HK$)" %}</th>{% endif %}{% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in rec.lines %}
+    <tr>
+      <td>{{ l.item_no }}</td>
+      <td>{{ l.description }}{% if l.note %}<br><span class="muted">{{ l.note }}</span>{% endif %}</td>
+      <td>{{ l.material }}</td>
+      <td class="num">{{ l.qty|default:"—" }}</td>
+      <td>{{ l.unit }}</td>
+      {% if rec.area is not None %}<td class="num">{{ l.total_qty|default:"—" }}</td><td class="num"><strong>{{ l.order_qty|default:"—" }}</strong></td>{% endif %}
+      {% if show_prices %}
+      <td class="num">{{ l.unit_price|default:"—" }}</td>
+      <td class="num">{{ l.cost|default:"—" }}</td>
+      {% if rec.area is not None %}<td class="num">{{ l.total_cost|default:"—" }}</td>{% endif %}
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+  {% if show_prices %}
+  <tfoot>
+    <tr>
+      <td colspan="{% if rec.area is not None %}8{% else %}6{% endif %}">{% t "合計（已計項目）" %}</td>
+      <td class="num">{{ rec.total_per_sqm|floatformat:2 }}</td>
+      {% if rec.area is not None %}<td class="num">{{ rec.grand_total|floatformat:2 }}</td>{% endif %}
+    </tr>
+  </tfoot>
+  {% endif %}
+</table>
+{% endblock %}

@@ -268,6 +268,27 @@ EN = {
     "選擇材料…": "Select material…",
     "已替換：{a} → {b}": "Replaced: {a} → {b}",
 
+    # ---------- 計價紀錄 ----------
+    "計價紀錄": "Calculation history",
+    "每次計價都會自動記錄，保留 {n} 日後自動刪除。同一條件 10 分鐘內重複計算只記一次。":
+        "Every calculation is recorded automatically and deleted after {n} days. Repeating the same calculation within 10 minutes is recorded once.",
+    "所有人": "Everyone",
+    "只看我的": "Mine only",
+    "時間": "Time",
+    "每 m² 合計": "Total per m²",
+    "合計": "Total",
+    "查看": "View",
+    "重新計算": "Recalculate",
+    "未有計價紀錄": "No calculation history",
+    "上一頁": "Previous",
+    "下一頁": "Next",
+    "返回計價紀錄": "Back to calculation history",
+    "用現時價錢重新計算": "Recalculate with current prices",
+    "這是當時的計算結果（快照），之後的價錢或配方改動不會影響這裡的數字。紀錄會在 {n} 日後自動刪除。":
+        "This is a snapshot of the result at that time; later price or specification changes do not affect these figures. It will be deleted after {n} days.",
+    "語言": "Language",
+    "明細": "Details",
+
     # ---------- 後台按鈕、離開確認 ----------
     "返回列表": "Back to list",
     "有未儲存的修改，確定要離開嗎？": "You have unsaved changes. Are you sure you want to leave?",
