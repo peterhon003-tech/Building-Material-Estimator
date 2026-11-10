@@ -9,7 +9,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from estimator.models import FireSystem, Material, MaterialPrice, SystemComponent
-from estimator.seed import COMPONENTS_EN, DRAWING, MATERIALS, MATERIALS_EN, NOTES_EN, SYSTEMS
+from estimator.seed import COMPONENTS_EN, DRAWING, MATERIALS, MATERIALS_EN, NOTES_EN, SYSTEMS, UNITS_EN
 
 ESTIMATOR_GROUP = "估價員"
 ESTIMATOR_PERMS = ["view_material", "view_materialprice"]
@@ -79,6 +79,10 @@ class Command(BaseCommand):
             if changed:
                 m.save(update_fields=changed)
                 new_en += 1
+        for m in Material.objects.filter(unit_en="", unit__in=list(UNITS_EN)):
+            m.unit_en = UNITS_EN[m.unit]
+            m.save(update_fields=["unit_en"])
+            new_en += 1
         for c in SystemComponent.objects.all():
             changed = []
             if not c.description_en and c.description in COMPONENTS_EN:

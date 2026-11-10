@@ -159,6 +159,9 @@ MATERIALS_EN = {
     "LB-ENCL": ("Enclosure installation labour", ""),
 }
 
+# 計價單位（中文）→ 英文
+UNITS_EN = {"張": "sheet", "支": "pc", "件": "pc", "粒": "nos", "m²": "m²", "米": "m", "公斤": "kg"}
+
 # 組件項目（中文）→ 英文
 COMPONENTS_EN = {
     "Promat 板": "Promat board",

@@ -249,23 +249,11 @@ def material_add(request):
 
 # ---------- Excel 批量更新（價錢、新增 / 修改 / 停用材料） ----------
 
-KNOWN_UNITS = ["張", "支", "件", "粒", "m²", "m", "米", "公斤", "kg", "套", "卷", "罐"]
 ACTION_WORDS = {"新增": ["add", "new"], "停用": ["deactivate", "disable"], "更新": ["update"]}
 
 
 def _import_options(request):
     """parse_workbook 用的別名表和權限。"""
-    units = set(Material.objects.values_list("unit", flat=True)) | set(KNOWN_UNITS)
-    unit_aliases = {}
-    for u in units:
-        for alias in all_languages(u) | {u}:
-            key = alias.lower()
-            if key in unit_aliases and unit_aliases[key] not in (u, None):
-                unit_aliases[key] = None            # 不清楚（例如英文 pc 可以是「支」或「件」）
-            elif key not in unit_aliases:
-                unit_aliases[key] = u
-    for u in units:
-        unit_aliases[u.lower()] = u                 # 中文寫法一定清楚
     category_aliases = {}
     for code, zh in Material.CATEGORIES:
         category_aliases[code.lower()] = code
@@ -276,8 +264,10 @@ def _import_options(request):
         for alias in all_languages(action) | {action} | set(extra):
             action_aliases[alias.lower()] = "" if action == importer.ACTION_UPDATE else action
     return {
-        "header_aliases": {h: all_languages(h) for h in importer.HEADERS},
-        "category_aliases": category_aliases, "unit_aliases": unit_aliases, "action_aliases": action_aliases,
+        "header_aliases": {h: all_languages(h) | set().union(*(all_languages(o) for o in
+                                                               importer.OLD_HEADER_ALIASES.get(h, set())))
+                           for h in importer.HEADERS},
+        "category_aliases": category_aliases, "action_aliases": action_aliases,
         "category_names": {code: tr(zh) for code, zh in Material.CATEGORIES},
         "can_add": request.user.has_perm("estimator.add_material"),
         "can_change": request.user.has_perm("estimator.change_material"),
@@ -297,7 +287,7 @@ def _materials_lookup():
         p = m.current_price() if m.active else None
         data[m.code] = importer.MaterialInfo(
             name=m.name, spec=m.spec, name_en=m.name_en, spec_en=m.spec_en, category=m.category,
-            unit=m.unit, coverage=m.coverage, price=p.unit_price if p else None,
+            unit=m.unit, unit_en=m.unit_en, coverage=m.coverage, price=p.unit_price if p else None,
             price_date=p.effective_date if p else None, active=m.active, used_in=used.get(m.code, []),
             unit_names={u.lower() for u in all_languages(m.unit)})
     return data
@@ -311,7 +301,8 @@ def price_import_template(request):
         p = m.current_price()
         rows.append({
             "code": m.code, "name": m.name, "spec": m.spec, "name_en": m.name_en, "spec_en": m.spec_en,
-            "category_label": names.get(m.category, m.category), "unit": m.display_unit(), "coverage": m.coverage,
+            "category_label": names.get(m.category, m.category), "unit": m.unit, "unit_en": m.unit_en,
+            "coverage": m.coverage,
             "price": p.unit_price if p else None, "price_date": p.effective_date if p else None,
             "supplier": p.supplier if p else "",
         })
@@ -367,6 +358,7 @@ def price_import_confirm(request):
             f = r["fields"]
             Material.objects.create(code=r["code"], name=f["name"], spec=f["spec"], name_en=f["name_en"],
                                     spec_en=f["spec_en"], category=f["category"], unit=f["unit"],
+                                    unit_en=f.get("unit_en", ""),
                                     coverage=Decimal(f["coverage"]))
             counts["new"] += 1
         # 2. 修改材料資料

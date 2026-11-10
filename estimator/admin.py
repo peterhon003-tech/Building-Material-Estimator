@@ -30,7 +30,7 @@ class MaterialPriceInline(admin.TabularInline):
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
-    list_display = ["code", "name", "spec", "name_en", "category", "unit", "coverage", "active"]
+    list_display = ["code", "name", "spec", "name_en", "category", "unit", "unit_en", "coverage", "active"]
     list_filter = ["category", "active"]
     search_fields = ["code", "name", "spec", "name_en"]
     inlines = [MaterialPriceInline]

@@ -268,7 +268,8 @@ class AdminAndImportTests(TestCase):
         m = Material.objects.get(code="PTH-09")
         self.assertEqual(ws.cell(r, C["中文名稱"]).value, m.name)
         self.assertEqual(ws.cell(r, C["類別"]).value, "板")
-        self.assertEqual(ws.cell(r, C["計價單位"]).value, "張")
+        self.assertEqual(ws.cell(r, C["中文計價單位"]).value, "張")
+        self.assertEqual(ws.cell(r, C["英文計價單位"]).value, "sheet")
         self.assertAlmostEqual(ws.cell(r, C["每單位涵蓋量"]).value, 2.9768)
         current = ws.cell(r, C["現時生效日期"])
         self.assertEqual(current.value.date(), m.current_price().effective_date)
@@ -302,7 +303,7 @@ class AdminAndImportTests(TestCase):
         wb, ws = self._sheet()
         r = self._blank_row(ws)
         self._set_row(ws, r, 動作="新增", 編號="pth-30", 中文名稱="Promatect-H", 中文規格="30mm",
-                      英文名稱="Promatect-H", 類別="板", 計價單位="張", 每單位涵蓋量=2.9768, 新單價=1100)
+                      英文名稱="Promatect-H", 類別="板", 中文計價單位="張", 每單位涵蓋量=2.9768, 新單價=1100)
         resp = self._upload(wb)
         result = resp.context["result"]
         self.assertEqual([n.code for n in result.new], ["PTH-30"])
@@ -317,10 +318,10 @@ class AdminAndImportTests(TestCase):
     def test_add_errors(self):
         wb, ws = self._sheet()
         r = self._blank_row(ws)
-        self._set_row(ws, r, 動作="新增", 編號="PTH-09", 中文名稱="x", 類別="板", 計價單位="張", 每單位涵蓋量=1)
+        self._set_row(ws, r, 動作="新增", 編號="PTH-09", 中文名稱="x", 類別="板", 中文計價單位="張", 每單位涵蓋量=1)
         self._set_row(ws, r + 1, 編號="NEW-1", 新單價=10)                       # 沒有填「新增」
-        self._set_row(ws, r + 2, 動作="新增", 編號="NEW-2", 中文名稱="y", 類別="水泥", 計價單位="包", 每單位涵蓋量=1)
-        self._set_row(ws, r + 3, 動作="新增", 編號="NEW-3", 類別="板", 計價單位="張", 每單位涵蓋量=1)   # 沒有名稱
+        self._set_row(ws, r + 2, 動作="新增", 編號="NEW-2", 中文名稱="y", 類別="水泥", 中文計價單位="包", 每單位涵蓋量=1)
+        self._set_row(ws, r + 3, 動作="新增", 編號="NEW-3", 類別="板", 中文計價單位="張", 每單位涵蓋量=1)   # 沒有名稱
         result = self._upload(wb).context["result"]
         self.assertEqual(result.new, [])
         self.assertEqual([row for row, _ in result.errors], [r, r + 1, r + 2, r + 3])
@@ -340,6 +341,35 @@ class AdminAndImportTests(TestCase):
         m = Material.objects.get(code="AG-50x50x1.0")
         self.assertEqual((m.name, m.spec_en, m.coverage), ("鍍鋅角鐵", "50x50x1.0mm", Decimal("3.0000")))
         self.assertEqual(m.prices.count(), 1)                                 # 價錢沒有改動
+
+    def test_blank_required_details_mean_no_change_and_units(self):
+        wb, ws = self._sheet()
+        rows = self._rows(ws)
+        self._set_row(ws, rows["AG-50x50x1.0"], 每單位涵蓋量=None, 類別=None, 中文名稱=None)   # 留空 = 不改動
+        self._set_row(ws, rows["PTH-09"], 英文計價單位="pc")                                  # 只改英文單位
+        r = self._blank_row(ws)
+        self._set_row(ws, r, 動作="新增", 編號="DURA-6.0", 中文名稱="Durasteel Panel", 類別="板",
+                      中文計價單位="張", 英文計價單位="pc", 每單位涵蓋量=None)               # 新材料必須填涵蓋量
+        self._set_row(ws, r + 1, 動作="新增", 編號="DURA-9.5", 中文名稱="Durasteel Panel", 類別="板",
+                      中文計價單位="張", 英文計價單位="panel", 每單位涵蓋量=2.88)
+        result = self._upload(wb).context["result"]
+        self.assertEqual([(row, "每單位涵蓋量" in msg) for row, msg in result.errors], [(r, True)])
+        self.assertEqual([(c.code, c.values) for c in result.changes], [("PTH-09", {"unit_en": "pc"})])
+        self.client.post(reverse("price_import_confirm"))
+        pth = Material.objects.get(code="PTH-09")
+        self.assertEqual((pth.unit, pth.unit_en), ("張", "pc"))
+        self.assertEqual(Material.objects.get(code="AG-50x50x1.0").coverage, Decimal("2.4400"))
+        dura = Material.objects.get(code="DURA-9.5")
+        self.assertEqual((dura.unit, dura.unit_en), ("張", "panel"))
+        self.assertEqual(dura.display_unit("en"), "panel")
+        self.assertEqual(dura.display_unit("zh-hant"), "張")
+
+    def test_display_unit_falls_back_to_translation(self):
+        m = Material.objects.get(code="PTH-09")
+        self.assertEqual(m.unit_en, "sheet")                                  # seed_data 已填上
+        m.unit_en = ""
+        self.assertEqual(m.display_unit("en"), "sheet")                       # 留空：按翻譯表
+        self.assertEqual(m.display_unit("zh-hans"), "张")
 
     def test_deactivate_unused_material_only(self):
         wb, ws = self._sheet()
@@ -366,7 +396,7 @@ class AdminAndImportTests(TestCase):
         self._set_row(ws, rows["PTH-25"], 動作="停用")
         self._set_row(ws, rows["PTH-09"], 新單價=380)
         r = self._blank_row(ws)
-        self._set_row(ws, r, 動作="新增", 編號="NEW-9", 中文名稱="x", 類別="板", 計價單位="張", 每單位涵蓋量=1)
+        self._set_row(ws, r, 動作="新增", 編號="NEW-9", 中文名稱="x", 類別="板", 中文計價單位="張", 每單位涵蓋量=1)
         result = self._upload(wb).context["result"]
         self.assertEqual((result.new, result.changes, result.deactivate), ([], [], []))
         self.assertEqual([p.code for p in result.valid], ["PTH-09"])
@@ -683,8 +713,9 @@ class LanguageTests(TestCase):
         self.assertEqual(ws.cell(1, C["新單價"]).value, "New price")
         self.assertEqual(ws.cell(1, C["中文名稱"]).value, "Chinese name")
         codes = {ws.cell(r, C["編號"]).value: r for r in range(2, ws.max_row + 1)}
-        self.assertEqual(ws.cell(codes["PTH-09"], C["計價單位"]).value, "sheet")       # 計價單位用英文
-        self.assertEqual(ws.cell(codes["AG-50x50x1.0"], C["計價單位"]).value, "pc")
+        self.assertEqual(ws.cell(codes["PTH-09"], C["中文計價單位"]).value, "張")
+        self.assertEqual(ws.cell(codes["PTH-09"], C["英文計價單位"]).value, "sheet")
+        self.assertEqual(ws.cell(1, C["英文計價單位"]).value, "English pricing unit")
         ws.cell(codes["PTH-09"], C["新單價"]).value = 380
         out = BytesIO()
         wb.save(out)

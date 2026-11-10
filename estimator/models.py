@@ -4,7 +4,7 @@ from django.conf import settings
 from django.db import models
 
 from . import calc
-from .i18n import EN_CODE, LANGUAGES, localized, tl, tr
+from .i18n import EN_CODE, LANGUAGES, current_language, localized, tl, tr
 
 
 class Material(models.Model):
@@ -29,6 +29,8 @@ class Material(models.Model):
                                help_text=tl("英文介面使用；留空就顯示中文規格"))
     category = models.CharField(tl("類別"), max_length=20, choices=CATEGORY_CHOICES)
     unit = models.CharField(tl("計價單位"), max_length=20, help_text=tl("例如：張、支、件、粒、m²"))
+    unit_en = models.CharField(tl("英文計價單位"), max_length=20, blank=True,
+                               help_text=tl("英文介面使用，例如 sheet、pc、nos；留空就按系統翻譯顯示"))
     coverage = models.DecimalField(
         tl("每單位涵蓋量"), max_digits=10, decimal_places=4, default=1,
         help_text=tl("板／岩棉填每單位面積 (m²)，鐵料填每支長度 (m)，其他填 1"),
@@ -50,6 +52,10 @@ class Material(models.Model):
         return f"{name} {spec}".strip()
 
     def display_unit(self, lang=None):
+        """英文介面優先用英文計價單位；未填就按翻譯表（沒有翻譯就顯示中文）。"""
+        lang = lang or current_language()
+        if lang == EN_CODE and self.unit_en:
+            return self.unit_en
         return tr(self.unit, lang)
 
     def local_name(self):

@@ -446,4 +446,13 @@ EN = {
     '「動作」只可以留空，或選「更新」、「新增」、「停用」': '"Action" must be blank, "Update", "Add" or "Deactivate"',
     '「更新」或留空 = 更新價錢 / 資料；「新增」= 新材料；「停用」= 停用材料': '"Update" or blank = update price / details; "Add" = new material; "Deactivate" = deactivate material',
     '9. 計價單位按下載範本時的介面語言顯示（例如英文 sheet、pc、nos），上載時會自動辨認。新增材料時，英文 pc 可以是「支」或「件」，請改用中文填寫這兩個單位。': '9. Pricing units are shown in the interface language used to download the template (e.g. sheet, pc, nos in English) and are recognised automatically on upload. When adding a material, "pc" could mean 支 or 件, so enter these two units in Chinese.',
+    '9. 計價單位會照填寫的文字儲存（例如 pc、no.、m²）。和現時單位相同（包括其他語言的寫法）就當作沒有改動。': '9. The pricing unit is saved exactly as entered (e.g. pc, no., m²). If it matches the current unit (in any language), it is treated as unchanged.',
+    '10. 現有材料的中文名稱、類別、計價單位、每單位涵蓋量留空 = 不改動；新增材料時這幾欄必須填寫。': '10. For existing materials, a blank Chinese name, Category, Pricing unit or Coverage per unit means no change. These columns are required when adding a material.',
+    '中文計價單位': 'Chinese pricing unit',
+    '英文計價單位': 'English pricing unit',
+    '英文介面使用，例如 sheet、pc、nos；留空就按系統翻譯顯示': 'Used in the English interface, e.g. sheet, pc, nos. If blank, the system translation is shown',
+    '6. 修改材料資料：直接修改藍色欄（中文名稱、規格、英文名稱、類別、中文 / 英文計價單位、每單位涵蓋量）。修改「每單位涵蓋量」會影響所有用到這材料的系統計算。': '6. To change material details, edit the blue columns (Chinese name, specification, English name, category, Chinese / English pricing unit, coverage per unit). Changing "Coverage per unit" affects every system that uses the material.',
+    '7. 新增材料：在最後的空白行，「動作」填「新增」，再填編號、中文名稱、類別、中文計價單位、每單位涵蓋量（英文計價單位建議一併填寫）；可同時填新單價。': '7. To add a material, use a blank row at the end: set Action to "Add", then fill in Code, Chinese name, Category, Chinese pricing unit and Coverage per unit (filling in the English pricing unit is recommended). You can also enter a New price.',
+    '9. 中文計價單位填中文（例如 張、支、件、粒），英文計價單位填英文（例如 sheet、pc、nos）。中文介面顯示中文單位，英文介面顯示英文單位；英文計價單位留空會按系統翻譯顯示。': '9. Enter the Chinese pricing unit in Chinese (e.g. 張, 支, 件, 粒) and the English pricing unit in English (e.g. sheet, pc, nos). The Chinese interface shows the Chinese unit and the English interface shows the English unit; if the English pricing unit is blank, the system translation is shown.',
+    '10. 現有材料的中文名稱、類別、中文計價單位、每單位涵蓋量留空 = 不改動；新增材料時這幾欄必須填寫。': '10. For existing materials, a blank Chinese name, Category, Chinese pricing unit or Coverage per unit means no change. These columns are required when adding a material.',
 }

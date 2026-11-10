@@ -1,7 +1,7 @@
 """Excel 批量更新：價錢、新增材料、修改材料資料、停用材料（不依賴 Django，方便測試）。
 
 範本欄位：
-  動作 | 編號 | 中文名稱 | 中文規格 | 英文名稱 | 英文規格 | 類別 | 計價單位 | 每單位涵蓋量 |
+  動作 | 編號 | 中文名稱 | 中文規格 | 英文名稱 | 英文規格 | 類別 | 中文計價單位 | 英文計價單位 | 每單位涵蓋量 |
   現時單價 | 現時生效日期 | 新單價 | 供應商 | 生效日期 | 備註
 
 - 動作留空或「更新」：更新價錢（「新單價」有填時）及修改材料資料（和現時資料不同時）
@@ -19,13 +19,15 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 
-HEADERS = ["動作", "編號", "中文名稱", "中文規格", "英文名稱", "英文規格", "類別", "計價單位", "每單位涵蓋量",
+HEADERS = ["動作", "編號", "中文名稱", "中文規格", "英文名稱", "英文規格", "類別", "中文計價單位", "英文計價單位", "每單位涵蓋量",
            "現時單價", "現時生效日期", "新單價", "供應商", "生效日期", "備註"]
 COL = {h: i + 1 for i, h in enumerate(HEADERS)}           # 欄號（1 起）
 ACTION_ADD, ACTION_DEACTIVATE, ACTION_UPDATE = "新增", "停用", "更新"   # 「更新」= 留空
 DETAIL_FIELDS = [("中文名稱", "name"), ("中文規格", "spec"), ("英文名稱", "name_en"), ("英文規格", "spec_en"),
-                 ("類別", "category"), ("計價單位", "unit"), ("每單位涵蓋量", "coverage")]
-TEXT_LIMITS = {"name": 100, "spec": 100, "name_en": 100, "spec_en": 100, "unit": 20}
+                 ("類別", "category"), ("中文計價單位", "unit"), ("英文計價單位", "unit_en"), ("每單位涵蓋量", "coverage")]
+OLD_HEADER_ALIASES = {"中文計價單位": {"計價單位"}}   # 舊範本的欄名
+REQUIRED_DETAILS = {"name", "category", "unit", "coverage"}
+TEXT_LIMITS = {"name": 100, "spec": 100, "name_en": 100, "spec_en": 100, "unit": 20, "unit_en": 20}
 MAX_ROWS = 2000
 MAX_COVERAGE = Decimal("999999")
 
@@ -43,6 +45,7 @@ class MaterialInfo:
     spec_en: str = ""
     category: str = ""
     unit: str = ""
+    unit_en: str = ""
     coverage: Decimal = Decimal("1")
     price: Decimal | None = None
     price_date: date | None = None
@@ -81,7 +84,7 @@ class ImportRow:
 class NewMaterial:
     row: int
     code: str
-    fields: dict                # name, spec, name_en, spec_en, category, unit, coverage
+    fields: dict                # name, spec, name_en, spec_en, category, unit, unit_en, coverage
     category_label: str = ""    # 預覽顯示用
 
     @property
@@ -151,7 +154,7 @@ class ImportResult:
 # ---------- 範本 ----------
 
 def build_template(materials, t=_no_translate, categories=None, actions=None):
-    """materials：[dict(code, name, spec, name_en, spec_en, category_label, unit, coverage,
+    """materials：[dict(code, name, spec, name_en, spec_en, category_label, unit, unit_en, coverage,
                         price, price_date, supplier)]
     categories：類別顯示名稱（下拉選單用）；actions：動作顯示名稱（新增、停用）。
     """
@@ -162,7 +165,7 @@ def build_template(materials, t=_no_translate, categories=None, actions=None):
     for m in materials:
         ws.append([
             None, m["code"], m["name"], m.get("spec", ""), m.get("name_en", ""), m.get("spec_en", ""),
-            m.get("category_label", ""), m.get("unit", ""),
+            m.get("category_label", ""), m.get("unit", ""), m.get("unit_en", ""),
             float(m["coverage"]) if m.get("coverage") is not None else None,
             float(m["price"]) if m.get("price") is not None else None, m.get("price_date"),
             None, m.get("supplier") or "", None, "",
@@ -177,12 +180,13 @@ def build_template(materials, t=_no_translate, categories=None, actions=None):
         c.font = bold
         c.fill = grey
         c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    for h in ("動作", "中文名稱", "中文規格", "英文名稱", "英文規格", "類別", "計價單位", "每單位涵蓋量"):
+    for h in ("動作", "中文名稱", "中文規格", "英文名稱", "英文規格", "類別", "中文計價單位", "英文計價單位",
+              "每單位涵蓋量"):
         ws.cell(1, COL[h]).fill = blue                # 材料資料（可改）
     for h in ("新單價", "供應商", "生效日期", "備註"):
         ws.cell(1, COL[h]).fill = yellow              # 價錢（可填）
     widths = {"動作": 9, "編號": 20, "中文名稱": 18, "中文規格": 24, "英文名稱": 18, "英文規格": 24,
-              "類別": 12, "計價單位": 9, "每單位涵蓋量": 12, "現時單價": 11, "現時生效日期": 13,
+              "類別": 12, "中文計價單位": 10, "英文計價單位": 10, "每單位涵蓋量": 12, "現時單價": 11, "現時生效日期": 13,
               "新單價": 11, "供應商": 24, "生效日期": 13, "備註": 28}
     for h, w in widths.items():
         ws.column_dimensions[ws.cell(1, COL[h]).column_letter].width = w
@@ -236,10 +240,11 @@ def build_template(materials, t=_no_translate, categories=None, actions=None):
         "3. 供應商、生效日期留空，會使用上載頁面填寫的預設值。",
         "4. 不要修改「編號」欄，系統用它配對材料。",
         "5. 上載後會先顯示預覽，確認後才會儲存。舊價錢會保留在紀錄中。",
-        "6. 修改材料資料：直接修改藍色欄（中文名稱、規格、英文名稱、類別、計價單位、每單位涵蓋量）。修改「每單位涵蓋量」會影響所有用到這材料的系統計算。",
-        "7. 新增材料：在最後的空白行，「動作」填「新增」，再填編號、中文名稱、類別、計價單位、每單位涵蓋量；可同時填新單價。",
+        "6. 修改材料資料：直接修改藍色欄（中文名稱、規格、英文名稱、類別、中文 / 英文計價單位、每單位涵蓋量）。修改「每單位涵蓋量」會影響所有用到這材料的系統計算。",
+        "7. 新增材料：在最後的空白行，「動作」填「新增」，再填編號、中文名稱、類別、中文計價單位、每單位涵蓋量（英文計價單位建議一併填寫）；可同時填新單價。",
         "8. 停用材料：「動作」填「停用」。停用不會刪除紀錄，可在系統管理重新啟用；仍在系統配方中使用的材料不可以停用。",
-        "9. 計價單位按下載範本時的介面語言顯示（例如英文 sheet、pc、nos），上載時會自動辨認。新增材料時，英文 pc 可以是「支」或「件」，請改用中文填寫這兩個單位。",
+        "9. 中文計價單位填中文（例如 張、支、件、粒），英文計價單位填英文（例如 sheet、pc、nos）。中文介面顯示中文單位，英文介面顯示英文單位；英文計價單位留空會按系統翻譯顯示。",
+        "10. 現有材料的中文名稱、類別、中文計價單位、每單位涵蓋量留空 = 不改動；新增材料時這幾欄必須填寫。",
     ]:
         info.append([t(line)])
     info["A1"].font = bold
@@ -313,12 +318,12 @@ def parse_workbook(file, materials, default_supplier, default_date, t=_no_transl
                    can_add=False, can_change=False, category_names=None):
     """materials：{code: MaterialInfo}，包括已停用的材料（新增時檢查重複）。
 
-    *_aliases：{顯示文字（小寫）: 儲存值}，用來辨認任何語言寫的類別、單位和動作。
+    *_aliases：{顯示文字（小寫）: 儲存值}，用來辨認任何語言寫的類別和動作。
+    unit_aliases：已不使用（計價單位照填寫的文字儲存），保留參數只為相容。
     can_add / can_change：用戶是否有新增 / 修改（含停用）材料的權限。
     """
     result = ImportResult()
     category_aliases = category_aliases or {}
-    unit_aliases = unit_aliases or {}
     action_aliases = {**{ACTION_ADD: ACTION_ADD, ACTION_DEACTIVATE: ACTION_DEACTIVATE, ACTION_UPDATE: ""},
                       **(action_aliases or {})}
     category_names = category_names or {}
@@ -353,34 +358,32 @@ def parse_workbook(file, materials, default_supplier, default_date, t=_no_transl
         return aliases.get(text.lower(), aliases.get(text, None))
 
     def read_details(values, info):
-        """讀取材料資料欄，傳回 {欄位: 新值}（只包括有欄的）。資料不正確時 raise ValueError。"""
+        """讀取材料資料欄，傳回 {欄位: 新值}（只包括有欄的）。資料不正確時 raise ValueError。
+
+        現有材料（info 不是 None）：必填欄（中文名稱、類別、計價單位、涵蓋量）留空 = 不改動。
+        新材料（info 是 None）：必填欄不可以留空。
+        """
         out = {}
         for h, key in detail_cols:
             raw = cell(values, h)
+            text = _text(raw)
+            if key in REQUIRED_DETAILS and text == "":
+                if info is not None:
+                    continue                          # 現有材料：留空 = 不改動
+                raise ValueError(t("「{col}」不可以留空", col=t(h)))
             if key == "category":
-                if _text(raw) == "":
-                    raise ValueError(t("「{col}」不可以留空", col=t(h)))
                 value = lookup(category_aliases, raw)
                 if value is None:
-                    raise ValueError(t("類別「{v}」不正確，請從清單選擇", v=_text(raw)))
+                    raise ValueError(t("類別「{v}」不正確，請從清單選擇", v=text))
             elif key == "unit":
-                if _text(raw) == "":
-                    raise ValueError(t("「{col}」不可以留空", col=t(h)))
-                text = _text(raw)
-                if info is not None and text.lower() in (info.unit_names | {info.unit.lower()}):
-                    value = info.unit                 # 和現時單位相同（任何語言的寫法，例如 pc = 支）
-                elif unit_aliases.get(text.lower(), "") is None:
-                    raise ValueError(t("計價單位「{v}」不清楚，請用中文填寫（例如 支、件）", v=text))
-                else:
-                    value = unit_aliases.get(text.lower()) or text
+                names = (info.unit_names | {info.unit.lower()}) if info is not None else set()
+                # 和現時單位相同（任何語言的寫法，例如英文介面的 sheet = 張）→ 不改動；
+                # 否則照填寫的文字儲存（例如 pc、no.、m²）
+                value = info.unit if text.lower() in names else text
             elif key == "coverage":
-                if _text(raw) == "":
-                    raise ValueError(t("「{col}」不可以留空", col=t(h)))
                 value = _coverage(raw, t)
             else:
-                value = _text(raw)
-                if key == "name" and not value:
-                    raise ValueError(t("「{col}」不可以留空", col=t(h)))
+                value = text
             if key in TEXT_LIMITS and len(value) > TEXT_LIMITS[key]:
                 raise ValueError(t("「{col}」太長（上限 {n} 字）", col=t(h), n=TEXT_LIMITS[key]))
             out[key] = value

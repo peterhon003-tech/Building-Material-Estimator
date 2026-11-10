@@ -36,7 +36,7 @@ class MaterialForm(forms.ModelForm):
 
     class Meta:
         model = Material
-        fields = ["code", "name", "spec", "name_en", "spec_en", "category", "unit", "coverage"]
+        fields = ["code", "name", "spec", "name_en", "spec_en", "category", "unit", "unit_en", "coverage"]
         help_texts = {
             "code": tl("不可重複，例如 PTH-30、AG-50x50x1.5"),
             "coverage": tl("板：每張面積 m²（1220×2440 = 2.9768）；鐵料：每支長度 m（8 尺 = 2.44）；"
