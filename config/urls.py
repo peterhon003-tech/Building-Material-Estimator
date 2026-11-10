@@ -11,5 +11,6 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),
     path("history/", include("history.urls")),     # 自動計價紀錄（可移除）
+    path("quotes/", include("quotes.urls")),       # 報價（可移除）
     path("", include("estimator.urls")),
 ]

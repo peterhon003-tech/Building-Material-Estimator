@@ -22,6 +22,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "estimator",
     "history",          # 自動計價紀錄（附加功能，可移除，見 README）
+    "quotes",           # 報價（附加功能，可移除，見 README）
 ]
 
 MIDDLEWARE = [
@@ -49,6 +50,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "history.context_processors.history_nav",   # 計價紀錄選單（可移除）
+                "quotes.context_processors.quotes_nav",     # 報價選單和「另存為報價」（可移除）
             ],
         },
     },
@@ -107,6 +109,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # 自動計價紀錄：開關及保留日數
 FB_CALC_HISTORY_ENABLED = True
 FB_CALC_HISTORY_DAYS = 180
+
+# 報價（quotes app）：False = 停用（隱藏選單和按鈕，網址顯示 404），數據保留
+FB_QUOTES_ENABLED = True
 
 # 關閉瀏覽器即登出：登入用的 session cookie 不設到期日，瀏覽器關閉後就會刪除
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True

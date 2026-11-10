@@ -6,7 +6,15 @@
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">{{ rec.system_label }}</h2>
-    <a class="btn" href="{% url 'calculator' %}?{{ rec.calculator_query }}">{% t "用現時價錢重新計算" %}</a>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      {% if fb_quote_save_url %}
+      <form method="post" action="{{ fb_quote_save_url }}" style="margin:0">
+        {% csrf_token %}<input type="hidden" name="source" value="record"><input type="hidden" name="record" value="{{ rec.pk }}">
+        <button class="btn secondary" type="submit" id="to-quote-btn">{% t "轉為報價" %}</button>
+      </form>
+      {% endif %}
+      <a class="btn" href="{% url 'calculator' %}?{{ rec.calculator_query }}">{% t "用現時價錢重新計算" %}</a>
+    </div>
   </div>
   <p class="muted" style="margin:6px 0 0">
     {{ rec.created_at|date:"Y-m-d H:i" }} · {{ rec.user.username|default:"—" }} · {% t "測試報告" %} {{ rec.report_no }}

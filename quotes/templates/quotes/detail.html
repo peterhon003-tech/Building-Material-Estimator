@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{{ quote.label }} · {% t "報價" %}{% endblock %}
+{% block content %}
+<style>
+  .q-draft { background:#fff8c5; border-color:#d4a72c; color:#7d4e00; }
+  .q-issued { background:#dafbe1; border-color:#4ac26b; color:#1a7f37; }
+  .q-cancelled { background:#ffebe9; border-color:#ff8182; color:#cf222e; }
+  .q-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .q-actions form { margin:0; }
+  .q-item h2 { margin:0; }
+  .q-info th { width:180px; background:none; }
+  .btn.danger { background:#fff; color:#cf222e; border:1px solid #cf222e; }
+  .btn.small { padding:3px 10px; font-size:13px; }
+</style>
+<p><a href="{% url 'quote_list' %}">← {% t "返回報價列表" %}</a></p>
+
+{% with q=quote %}
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+    <h1 style="margin:0">{% t "報價 {q}" q=quote.label %} {% include "quotes/_status.html" %}</h1>
+    <div class="q-actions">
+      {% if price_allowed %}
+      <a class="btn secondary" id="export-price" href="{% url 'quote_export' quote.pk %}">{% t "匯出 Excel" %}{% t "（包括價錢）" %}</a>
+      <a class="btn secondary" id="export-material" href="{% url 'quote_export' quote.pk %}?view=material">{% t "匯出 Excel" %}{% t "（只有材料）" %}</a>
+      {% else %}
+      <a class="btn secondary" id="export-material" href="{% url 'quote_export' quote.pk %}">{% t "匯出 Excel" %}{% t "（只有材料）" %}</a>
+      {% endif %}
+      {% if can_edit %}
+      <form method="post" action="{% url 'quote_issue' quote.pk %}" onsubmit="return confirm('{% filter escapejs %}{% t "發出後報價會鎖定，不可以再修改（可以建立新版本）。確定發出？" %}{% endfilter %}')">
+        {% csrf_token %}<button class="btn" type="submit" id="issue-btn">{% t "發出（鎖定）" %}</button>
+      </form>
+      {% endif %}
+      {% if can_manage and not quote.is_draft and is_latest %}
+      <form method="post" action="{% url 'quote_revise' quote.pk %}">
+        {% csrf_token %}<button class="btn" type="submit" id="revise-btn">{% t "建立新版本" %}</button>
+      </form>
+      {% endif %}
+      {% if can_manage and quote.status != "cancelled" %}
+      <form method="post" action="{% url 'quote_cancel' quote.pk %}" onsubmit="return confirm('{% filter escapejs %}{% t "確定取消這張報價？取消後不可以修改，但會保留紀錄。" %}{% endfilter %}')">
+        {% csrf_token %}<button class="btn danger" type="submit" id="cancel-btn">{% t "取消報價" %}</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  <p class="muted" style="margin:8px 0 0">
+    {% t "建立人" %} {{ quote.created_by.username|default:"—" }} · {{ quote.created_at|date:"Y-m-d H:i" }}
+    · {% t "最後修改" %} {{ quote.updated_by|default:"—" }} {{ quote.updated_at|date:"Y-m-d H:i" }}
+    {% if quote.issued_at %} · {% t "發出時間" %} {{ quote.issued_at|date:"Y-m-d H:i" }}{% endif %}
+  </p>
+  {% if revisions|length > 1 %}
+  <p class="muted" style="margin:4px 0 0">{% t "版本" %}：
+    {% for r in revisions %}{% if r.pk == quote.pk %}<strong>Rev {{ r.revision }}</strong>{% else %}<a href="{% url 'quote_detail' r.pk %}">Rev {{ r.revision }}</a>{% endif %} ({{ r.get_status_display }}){% if not forloop.last %} · {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% if not can_edit %}
+  <div class="warnbox">
+    {% if quote.is_draft %}{% t "這是 {u} 的草稿，只有建立人或系統管理員可以修改。" u=quote.created_by.username %}
+    {% elif quote.status == "issued" %}{% t "這張報價已發出並鎖定。如要修改，請建立新版本。" %}
+    {% else %}{% t "這張報價已取消。" %}{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endwith %}
+
+<div class="card">
+  <h2 style="margin-top:0">{% t "客戶資料" %}</h2>
+  {% if can_edit %}
+  <form method="post" id="customer-form">
+    {% csrf_token %}
+    <table class="q-info">
+      {% for field in form %}
+      <tr><th><label for="{{ field.id_for_label }}">{{ field.label }}</label></th><td>{{ field }}{{ field.errors }}</td></tr>
+      {% endfor %}
+    </table>
+    <p style="margin-bottom:0"><button class="btn" type="submit">{% t "儲存客戶資料" %}</button></p>
+  </form>
+  {% else %}
+  <table class="q-info" id="customer-info">
+    <tr><th>{% t "客戶名稱" %}</th><td>{{ quote.customer_name|default:"—" }}</td></tr>
+    <tr><th>{% t "聯絡人及電話" %}</th><td>{{ quote.contact|default:"—" }}</td></tr>
+    <tr><th>{% t "工程名稱及地址" %}</th><td>{{ quote.project|default:"—"|linebreaksbr }}</td></tr>
+    <tr><th>{% t "備註" %}</th><td>{{ quote.remarks|default:"—"|linebreaksbr }}</td></tr>
+  </table>
+  {% endif %}
+</div>
+
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-top:20px">
+  <h2 style="margin:0">{% t "項目" %}（{{ items|length }}）</h2>
+  <div class="q-actions">
+    {% if price_allowed %}
+    <span class="muted">{% t "顯示" %}：</span>
+    {% if view_mode == "material" %}<a href="?">{% t "包括價錢" %}</a> · <strong>{% t "只看材料" %}</strong>
+    {% else %}<strong>{% t "包括價錢" %}</strong> · <a href="?view=material">{% t "只看材料" %}</a>{% endif %}
+    {% endif %}
+    {% if can_edit %}<a class="btn" id="add-item" href="{% url 'calculator' %}?to_quote={{ quote.pk }}">＋ {% t "從計價加入項目" %}</a>{% endif %}
+  </div>
+</div>
+
+{% if show_prices and items %}
+<div class="card" id="quote-total" style="margin-top:12px">
+  <strong>{% t "報價合計" %}：HK$ {{ total|floatformat:2 }}</strong>
+  {% if partial %}<br><span class="muted">{% t "合計只包括有價錢和總面積的項目。" %}</span>{% endif %}
+</div>
+{% endif %}
+
+{% for item in items %}
+<div class="card q-item" id="item-{{ item.pk }}" style="margin-top:12px">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+    <h2>{{ item.position }}. {% if item.title %}{{ item.title }} · {% endif %}{{ item.system_label }}</h2>
+    {% if can_edit %}
+    <div class="q-actions">
+      <a class="btn secondary small" href="{% url 'quote_item_edit' quote.pk item.pk %}">{% t "修改" %}</a>
+      {% if not forloop.first %}<form method="post" action="{% url 'quote_item_move' quote.pk item.pk 'up' %}">{% csrf_token %}<button class="btn secondary small" type="submit" title="{% t "上移" %}">↑</button></form>{% endif %}
+      {% if not forloop.last %}<form method="post" action="{% url 'quote_item_move' quote.pk item.pk 'down' %}">{% csrf_token %}<button class="btn secondary small" type="submit" title="{% t "下移" %}">↓</button></form>{% endif %}
+      <form method="post" action="{% url 'quote_item_delete' quote.pk item.pk %}" onsubmit="return confirm('{% filter escapejs %}{% t "確定刪除這個項目？" %}{% endfilter %}')">{% csrf_token %}<button class="btn danger small" type="submit">{% t "刪除" %}</button></form>
+    </div>
+    {% endif %}
+  </div>
+  <p class="muted" style="margin:4px 0 8px">
+    {% if item.frr_label %}F.R.R. {{ item.frr_label }} · {% endif %}{% t "測試報告" %} {{ item.report_no|default:"—" }}
+    {% if item.area is not None %} · <strong>{% t "總面積" %} {{ item.area|floatformat:2 }} m²</strong>{% else %} · {% t "未輸入總面積（只計每 m²）" %}{% endif %}
+    {% if show_prices and item.include_prices and item.price_date %} · {% t "價錢日期" %} {{ item.price_date|date:"Y-m-d" }}{% endif %}
+    {% if item.adjusted %} · <span class="tag">{% t "已手動調整" %}</span>{% endif %}
+    {% if price_allowed and not item.include_prices %} · <span class="tag">{% t "只有材料" %}</span>{% endif %}
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>{% t "項目" %}</th><th>{% t "材料 / 規格" %}</th>
+        <th class="num">{% t "每 m² 用量" %}</th><th>{% t "單位" %}</th>
+        {% if item.area is not None %}<th class="num">{% t "總用量" %}</th><th class="num">{% t "訂購數量" %}</th>{% endif %}
+        {% if show_prices and item.include_prices %}<th class="num">{% t "單價 (HK$)" %}</th><th class="num">{% t "每 m² 價錢 (HK$)" %}</th>{% if item.area is not None %}<th class="num">{% t "總價 (HK$)" %}</th>{% endif %}{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in item.lines.all %}
+      <tr{% if l.qty is None or show_prices and item.include_prices and l.cost is None %} class="pending"{% endif %}>
+        <td>{{ l.item_no }}</td>
+        <td>{{ l.description }}{% if l.note %}<br><span class="muted">{{ l.note }}</span>{% endif %}{% if l.state != "original" %} <span class="tag">{{ l.get_state_display }}</span>{% endif %}</td>
+        <td>{{ l.material }}</td>
+        <td class="num">{% if l.qty is not None %}{{ l.qty|floatformat:4 }}{% else %}{% t "待定" %}{% endif %}</td>
+        <td>{{ l.unit }}</td>
+        {% if item.area is not None %}
+        <td class="num">{% if l.total_qty is not None %}{{ l.total_qty|floatformat:2 }}{% else %}{% t "待定" %}{% endif %}</td>
+        <td class="num"><strong>{% if l.order_qty is not None %}{{ l.order_qty|floatformat:"-2" }}{% else %}—{% endif %}</strong></td>
+        {% endif %}
+        {% if show_prices and item.include_prices %}
+        <td class="num">{% if l.unit_price is not None %}{{ l.unit_price|floatformat:2 }}{% else %}{% t "待提供" %}{% endif %}</td>
+        <td class="num">{% if l.cost is not None %}{{ l.cost|floatformat:2 }}{% else %}—{% endif %}</td>
+        {% if item.area is not None %}<td class="num">{% if l.total_cost is not None %}{{ l.total_cost|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% if show_prices and item.include_prices %}
+    <tfoot>
+      <tr>
+        <td colspan="{% if item.area is not None %}8{% else %}6{% endif %}">{% t "合計（已計項目）" %}</td>
+        <td class="num">{{ item.total_per_sqm|floatformat:2 }}<br><span class="muted" style="font-weight:400">{% t "每 m²" %}</span></td>
+        {% if item.area is not None %}<td class="num">{{ item.grand_total|floatformat:2 }}</td>{% endif %}
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% empty %}
+<div class="card muted" style="margin-top:12px">{% t "這張報價未有項目。按「從計價加入項目」，計算後按「另存為報價」並選擇這張報價。" %}</div>
+{% endfor %}
+{% endblock %}

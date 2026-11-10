@@ -5,6 +5,7 @@
 <h1>{% if price_allowed %}{% t "每 m² 材料及價錢" %}{% else %}{% t "每 m² 材料用量" %}{% endif %}</h1>
 
 <form method="get" class="card" id="calc-form">
+  {% if fb_quote_save_url and request.GET.to_quote %}<input type="hidden" name="to_quote" value="{{ request.GET.to_quote }}">{% endif %}
   <div class="row">
     <label>{% t "1. 品牌" %}
       <select name="brand" id="brand" required>
@@ -55,7 +56,10 @@
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
     <h2 style="margin:0">{{ result.system }}</h2>
-    <a class="btn" id="export-btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">{% t "匯出 Excel" %}{% if can_see_price %}{% t "（包括價錢）" %}{% else %}{% t "（只有材料）" %}{% endif %}</a>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      {% if fb_quote_save_url %}<button type="button" class="btn secondary" id="quote-btn">{% t "另存為報價" %}</button>{% endif %}
+      <a class="btn" id="export-btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">{% t "匯出 Excel" %}{% if can_see_price %}{% t "（包括價錢）" %}{% else %}{% t "（只有材料）" %}{% endif %}</a>
+    </div>
   </div>
   <p class="muted" style="margin:0">
     F.R.R. {{ result.system.frr_label }} · {% t "測試報告" %} {{ result.system.report_no }} · {% t "系統總厚度" %} {{ result.system.overall_thickness_mm }}mm ·
@@ -70,11 +74,17 @@
   <button type="button" class="btn secondary" id="adj-add" hidden>＋ {% t "新增項目" %}</button>
   <button type="button" class="btn secondary" id="adj-reset" hidden>{% t "還原" %}</button>
   <span class="tag adj-status" id="adj-status" hidden>{% t "已手動調整（未儲存到系統）" %}</span>
-  <span class="muted" style="font-size:13px">{% t "調整只用於這次查看和匯出 Excel，不會儲存到系統。" %}</span>
+  <span class="muted" style="font-size:13px">{% t "調整只用於這次查看、匯出 Excel 和另存為報價，不會改動系統的價錢或配方。" %}</span>
 </div>
 <form id="adj-export-form" method="post" action="{% url 'calculator_export_adjusted' %}" hidden>
   {% csrf_token %}<input type="hidden" name="payload" id="adj-payload">
 </form>
+{% if fb_quote_save_url %}
+<form id="quote-form" method="post" action="{{ fb_quote_save_url }}" hidden>
+  {% csrf_token %}<input type="hidden" name="source" value="calc"><input type="hidden" name="payload" id="quote-payload">
+  <input type="hidden" name="to_quote" value="{{ request.GET.to_quote }}">
+</form>
+{% endif %}
 
 <table id="calc-table">
   <thead>
@@ -448,12 +458,10 @@
   });
   rows.forEach((r, i) => r._orig = i);
 
-  // 有調整時，匯出改用「調整後」的內容（POST，不經網址）
-  document.getElementById("export-btn").addEventListener("click", function (e) {
-    if (!adjusted) return;
-    e.preventDefault();
+  // 目前畫面上的明細（包括調整），供匯出和另存為報價。數字格式錯誤時傳回 null
+  function payload() {
     const bad = rows.some(r => isNaN(num(r.qty)) || (showPrices && isNaN(num(r.unit_price))));
-    if (bad) { window.alert(T.invalid); return; }
+    if (bad) { window.alert(T.invalid); return null; }
     const lines = rows.map(function (r) {
       const o = { item_no: r.item_no, description: r.description, material: r.material, unit: r.unit,
                   qty: r.qty ?? "", round_up: r.round_up, state: r.state, method: r.method,
@@ -462,10 +470,29 @@
       if (showPrices) { o.unit_price = r.unit_price ?? ""; o.supplier = r.supplier; o.price_date = r.price_date; }
       return o;
     });
-    document.getElementById("adj-payload").value = JSON.stringify({
+    return JSON.stringify({
       brand: D.brand, system_type: D.system_type, hours: D.hours, view: D.view, area: D.area, lines: lines });
+  }
+
+  // 有調整時，匯出改用「調整後」的內容（POST，不經網址）
+  document.getElementById("export-btn").addEventListener("click", function (e) {
+    if (!adjusted) return;
+    e.preventDefault();
+    const data = payload();
+    if (data === null) return;
+    document.getElementById("adj-payload").value = data;
     exported = true;                          // 先設定，避免提交時觸發離開提示
     document.getElementById("adj-export-form").submit();
+  });
+
+  // 另存為報價：送出畫面上的明細（有沒有調整都一樣），由伺服器重新計算和檢查價錢權限
+  const quoteBtn = document.getElementById("quote-btn");
+  if (quoteBtn) quoteBtn.addEventListener("click", function () {
+    const data = payload();
+    if (data === null) return;
+    document.getElementById("quote-payload").value = data;
+    exported = true;
+    document.getElementById("quote-form").submit();
   });
 
   // 有未匯出的調整時離開頁面，先確認

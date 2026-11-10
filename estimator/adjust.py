@@ -21,6 +21,29 @@ def _text(value):
     return str(value or "").strip()[:MAX_TEXT]
 
 
+def parse_number(value, limit, label, t=_no_translate):
+    """讀取數字欄：空白 = None；不是數字、負數或太大 → ValueError（訊息已翻譯）。"""
+    return _number(value, limit, label, t)
+
+
+def line_numbers(qty, price, area, round_up=True):
+    """由每 m² 用量（未四捨五入）、單價和總面積計出一行的數字。"""
+    total = calc.total_qty(qty, area)
+    if total is None:
+        order = None
+    elif round_up:
+        order = calc.order_qty(total, "")          # 張、支、件、粒：向上進位
+    else:
+        order = calc.round_qty(total)
+    return {
+        "qty": calc.round_qty(qty),
+        "cost": calc.line_cost(qty, price),
+        "total_qty": calc.round_qty(total),
+        "order_qty": order,
+        "total_cost": calc.total_cost(qty, area, price),
+    }
+
+
 def _number(value, limit, label, t):
     raw = _text(value).replace(",", "")
     if raw == "":
@@ -66,13 +89,7 @@ def compute_rows(rows, area, include_prices, t=_no_translate):
         except ValueError:
             item_no = i
 
-        total = calc.total_qty(qty, area)
-        if total is None:
-            order = None
-        elif round_up:
-            order = calc.order_qty(total, "")          # 張、支、件、粒：向上進位
-        else:
-            order = calc.round_qty(total)
+        nums = line_numbers(qty, price, area, round_up)
 
         note = _text(r.get("note"))
         replaced_from = _text(r.get("replaced_from"))
@@ -94,14 +111,17 @@ def compute_rows(rows, area, include_prices, t=_no_translate):
             "unit": _text(r.get("unit")),
             "method": _text(r.get("method")) or (t("手動新增") if state == "added" else ""),
             "basis": _text(r.get("basis")),
-            "qty": calc.round_qty(qty),
+            "qty": nums["qty"],
             "unit_price": price,
             "supplier": _text(r.get("supplier")) if include_prices else "",
             "price_date": _date(r.get("price_date")) if include_prices else None,
-            "cost": calc.line_cost(qty, price),
+            "cost": nums["cost"],
             "note": note,
-            "total_qty": calc.round_qty(total),
-            "order_qty": order,
-            "total_cost": calc.total_cost(qty, area, price),
+            "total_qty": nums["total_qty"],
+            "order_qty": nums["order_qty"],
+            "total_cost": nums["total_cost"],
+            "qty_exact": qty,
+            "round_up": round_up,
+            "code": _text(r.get("code"))[:40],
         })
     return out

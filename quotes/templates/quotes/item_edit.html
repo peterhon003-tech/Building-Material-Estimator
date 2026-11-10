@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "修改項目" %} · {{ quote.label }}{% endblock %}
+{% block content %}
+<style>
+  #edit-table input[type=text] { width:100%; min-width:60px; padding:3px 6px; font-size:13px; }
+  #edit-table input.num { text-align:right; max-width:110px; }
+  #edit-table tr.new-row td { background:#eef6ff; }
+</style>
+<p><a href="{% url 'quote_detail' quote.pk %}#item-{{ item.pk }}" data-fb-cancel>← {% t "返回報價" %} {{ quote.label }}</a></p>
+<h1>{% t "修改項目" %} {{ item.position }}：{{ item.system_label }}</h1>
+<p class="muted">{% t "報價的數字是快照，這裡修改不會影響原料價錢或系統配方。用量或單價改動後，價錢會按新數字重新計算。" %}</p>
+
+<form method="post" id="item-form">
+  {% csrf_token %}
+  <input type="hidden" name="rows" value="{{ row_count }}">
+  <div class="card row">
+    <label>{% t "位置 / 說明（可選）" %}<input type="text" name="title" value="{{ title }}" maxlength="200" style="width:320px"></label>
+    <label>{% t "總面積 (m²)" %}<span class="muted" style="font-size:12px">{% t "可選，留空只計每 m²" %}</span>
+      <input type="text" inputmode="decimal" name="area" value="{{ area_raw }}" style="width:140px"></label>
+  </div>
+  <table id="edit-table">
+    <thead>
+      <tr>
+        <th>{% t "刪除" %}</th><th>{% t "項目" %}</th><th>{% t "材料 / 規格" %}</th>
+        <th class="num">{% t "每 m² 用量" %}</th><th>{% t "單位" %}</th>
+        <th title="{% t "訂購數量進位至整數" %}">{% t "進位" %}</th>
+        {% if with_prices %}<th class="num">{% t "單價 (HK$)" %}</th>{% endif %}
+        <th>{% t "備註" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr{% if not r.id %} class="new-row"{% endif %}>
+        <td>
+          <input type="hidden" name="l{{ forloop.counter0 }}_id" value="{{ r.id }}">
+          {% if r.id %}<input type="checkbox" name="l{{ forloop.counter0 }}_delete" value="1" {% if r.delete %}checked{% endif %} aria-label="{% t "刪除" %}">{% else %}<span class="muted">{% t "新增" %}</span>{% endif %}
+        </td>
+        <td><input type="text" name="l{{ forloop.counter0 }}_description" value="{{ r.description }}" maxlength="200">{% if r.state %}<span class="muted" style="font-size:12px">{{ r.state }}</span>{% endif %}</td>
+        <td><input type="text" name="l{{ forloop.counter0 }}_material" value="{{ r.material }}" maxlength="200"></td>
+        <td class="num"><input type="text" class="num" inputmode="decimal" name="l{{ forloop.counter0 }}_qty" value="{{ r.qty }}"></td>
+        <td><input type="text" name="l{{ forloop.counter0 }}_unit" value="{{ r.unit }}" maxlength="20" style="max-width:70px"></td>
+        <td style="text-align:center"><input type="checkbox" name="l{{ forloop.counter0 }}_round_up" value="1" {% if r.round_up %}checked{% endif %}></td>
+        {% if with_prices %}<td class="num"><input type="text" class="num" inputmode="decimal" name="l{{ forloop.counter0 }}_unit_price" value="{{ r.unit_price }}"></td>{% endif %}
+        <td><input type="text" name="l{{ forloop.counter0 }}_note" value="{{ r.note }}" maxlength="500"></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">{% t "最後 {n} 行是空白行，用來新增項目；不用的可以留空。需要更多行，先儲存再修改。" n=3 %}
+  {% if not with_prices %}{% t "這個項目不包括價錢。" %}{% endif %}</p>
+  <p><button class="btn" type="submit">{% t "儲存" %}</button>
+  <a class="btn secondary" href="{% url 'quote_detail' quote.pk %}#item-{{ item.pk }}" data-fb-cancel>{% t "取消" %}</a></p>
+</form>
+{% endblock %}

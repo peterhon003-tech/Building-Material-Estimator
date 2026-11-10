@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "另存為報價" %} · {% t "防火板計價系統" %}{% endblock %}
+{% block content %}
+<h1>{% t "另存為報價" %}</h1>
+<div class="card">
+  <strong>{{ summary.system }}</strong>
+  <p class="muted" style="margin:4px 0 0">
+    {% if summary.area is not None %}{% t "總面積" %} {{ summary.area|floatformat:2 }} m² · {% else %}{% t "未輸入總面積（只計每 m²）" %} · {% endif %}
+    {% t "{n} 行明細" n=summary.lines %}
+    {% if summary.adjusted %} · <span class="tag">{% t "已手動調整" %}</span>{% endif %}
+    {% if can_see_price %} · {% if summary.include_prices %}{% t "包括價錢" %}{% else %}{% t "只有材料（不包括價錢）" %}{% endif %}{% endif %}
+  </p>
+  <p class="muted" style="margin:6px 0 0">{% t "報價會複製現在的名稱、用量和價錢（快照），之後原料價錢或配方改動不會影響報價。" %}</p>
+</div>
+
+<form method="post" class="card" id="save-form">
+  {% csrf_token %}
+  <input type="hidden" name="source" value="{{ source }}">
+  <input type="hidden" name="payload" value="{{ payload }}">
+  <input type="hidden" name="record" value="{{ record }}">
+  <input type="hidden" name="confirm" value="1">
+  <p style="margin-top:0"><label style="display:flex; gap:8px; align-items:center">
+    <input type="radio" name="target" value="new" {% if preselect == "new" %}checked{% endif %}> <strong>{% t "建立新報價" %}</strong>
+  </label></p>
+  {% if drafts %}
+  <p><label style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <input type="radio" name="target" value="existing" {% if preselect != "new" %}checked{% endif %}> <strong>{% t "加入現有報價（草稿）" %}</strong>
+    <select name="existing">
+      {% for d in drafts %}<option value="{{ d.pk }}" {% if preselect == d.pk|stringformat:"s" %}selected{% endif %}>{{ d.label }}{% if d.customer_name %} · {{ d.customer_name }}{% endif %}{% if d.created_by and d.created_by != user %} · {{ d.created_by.username }}{% endif %}</option>{% endfor %}
+    </select>
+  </label></p>
+  {% else %}
+  <p class="muted">{% t "你未有可以加入的草稿報價。" %}</p>
+  {% endif %}
+  <label style="display:flex; flex-direction:column; gap:4px; max-width:420px">{% t "位置 / 說明（可選）" %}
+    <input type="text" name="title" maxlength="200" placeholder="{% t "例如 1/F 走廊" %}">
+  </label>
+  <p style="margin-bottom:0"><button class="btn" type="submit">{% t "儲存" %}</button>
+  <a class="btn secondary" href="javascript:history.back()">{% t "取消" %}</a></p>
+</form>
+{% endblock %}

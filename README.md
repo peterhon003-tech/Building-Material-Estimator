@@ -33,6 +33,8 @@ fireboard/
 │   ├── management/commands/seed_data.py
 │   ├── migrations/0001_initial.py
 │   └── tests.py
+├── history/                  # 自動計價紀錄（附加功能，見第 14 節）
+├── quotes/                   # 報價（附加功能，見第 15 節）
 └── templates/                # 網頁（中文介面）
 ```
 
@@ -265,3 +267,54 @@ python manage.py runserver
 4. 修改 `config/urls.py`：刪除 `path("history/", ...)` 一行
 5. 刪除 `history` 資料夾
 6. `docker compose up -d --build`，再執行 `docker compose exec web python manage.py test estimator`
+
+---
+
+## 15. 報價（另存為報價）
+
+**建立**
+- 計價頁算出結果後按「**另存為報價**」（有沒有臨時調整都可以），選「建立新報價」或「加入現有報價（草稿）」，可填「位置 / 說明」（例如 1/F 走廊）。
+- 一張報價可以有**多個項目**（例如 Enclosure 2hr 120 m² + Partition 1hr 80 m²），每個項目有自己的總面積。
+- 在報價頁按「＋ 從計價加入項目」→ 計算 → 「另存為報價」，會預先選好這張報價。
+- 在「計價紀錄」的查看頁按「**轉為報價**」，會直接複製當時的快照數字。
+
+**快照**：報價複製當時的名稱、規格、用量和價錢，之後原料價錢或配方改動**不會**影響已存的報價。保留材料編號方便追查。
+
+**編號和版本**：`Q-2026-0001 Rev A`（每年由 0001 開始）。
+- **草稿**：可以修改客戶資料（客戶名稱、聯絡人及電話、工程名稱及地址、備註）、修改項目（用量、單價、總面積、加減行）、調整次序、刪除項目
+- **發出（鎖定）**：之後不可以修改
+- **建立新版本**：複製成 Rev B（草稿），Rev A 保持不變。只可以由最新版本建立
+- **取消報價**：不刪除，保留紀錄
+- 報價列表預設只顯示每張報價的最新版本，勾選「顯示所有版本」可看全部
+
+**權限**
+- 所有登入用戶都可以查看所有報價
+- 只有**建立人**可以修改自己的草稿；**系統管理員（職員狀態）**可以修改所有人的
+- 沒有價錢權限的用戶：建立的報價只有材料；查看別人的報價和匯出 Excel 都**不會**看到任何價錢（由伺服器控制）；不可以修改包括價錢的項目
+
+**匯出 Excel**：報價頁的「匯出 Excel（包括價錢）/（只有材料）」，內容包括客戶資料、項目總表、每個項目的明細，並跟隨介面語言。
+
+**開關**：`config/settings.py` 的 `FB_QUOTES_ENABLED = True`。改為 `False` 後執行 `docker compose up -d --build`：選單、「另存為報價」和「轉為報價」按鈕隱藏，報價網址顯示 404；**數據保留**，改回 `True` 即恢復。停用期間後台仍可查看報價。
+
+**後台**：「系統管理 → 報價」只供查看和刪除（修改請在網站的報價頁進行，以保留鎖定和版本紀錄）。
+
+**測試**：`docker compose exec web python manage.py test estimator history quotes`
+
+### 完全移除這個功能
+報價放在獨立的 `quotes` 資料夾；計價頁和計價紀錄頁只在 `fb_quote_save_url` 存在時才顯示按鈕。**次序很重要：先刪數據表，再刪程式。**
+1. 備份數據庫：`docker compose exec db pg_dump -U fireboard -Fc -f /tmp/before-remove-quotes.dump fireboard`
+2. 刪除數據表（程式碼仍要存在）：`docker compose exec web python manage.py migrate quotes zero`
+3. 修改 `config/settings.py`：在 `INSTALLED_APPS` 刪除 `"quotes"`，在 `context_processors` 刪除 `"quotes.context_processors.quotes_nav"`，刪除 `FB_QUOTES_ENABLED` 一行
+4. 修改 `config/urls.py`：刪除 `path("quotes/", ...)` 一行
+5. 刪除 `quotes` 資料夾
+6. `docker compose up -d --build`，再執行 `docker compose exec web python manage.py test estimator history`
+
+---
+
+## 16. 自動備份（backup_fireboard.bat）
+
+- 雙擊 `backup_fireboard.bat` 即可備份一次；備份放在 `C:\fireboard_backup\daily`，每月 1 號另存到 `monthly`，結果寫在 `backup.log`
+- 每日備份保留 14 日，每月備份保留約 13 個月（檔案開頭的 `DAILY_KEEP`、`MONTHLY_KEEP` 可改）
+- 填上 `COPY_TO`（例如 `\\NAS\backup\fireboard`）可另外複製到 NAS
+- 用「工作排程器」每晚執行；電腦要開著並已登入，Docker Desktop 要在運行
+- 還原：見「7. 備份和還原」

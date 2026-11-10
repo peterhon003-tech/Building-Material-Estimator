@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "報價" %} · {% t "防火板計價系統" %}{% endblock %}
+{% block content %}
+<style>
+  .q-draft { background:#fff8c5; border-color:#d4a72c; color:#7d4e00; }
+  .q-issued { background:#dafbe1; border-color:#4ac26b; color:#1a7f37; }
+  .q-cancelled { background:#ffebe9; border-color:#ff8182; color:#cf222e; }
+</style>
+<h1>{% t "報價" %}</h1>
+<p class="muted">{% t "在「計價」頁按「另存為報價」建立報價。草稿可以修改；發出後鎖定，要修改請建立新版本。" %}</p>
+
+<form method="get" class="card row" style="padding:10px 16px">
+  <label>{% t "搜尋" %}
+    <input type="search" name="q" value="{{ f.q }}" placeholder="{% t "編號、客戶或工程" %}">
+  </label>
+  <label>{% t "狀態" %}
+    <select name="status">
+      <option value="">{% t "全部" %}</option>
+      {% for v, label in status_choices %}<option value="{{ v }}" {% if f.status == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label style="flex-direction:row; align-items:center; gap:6px"><input type="checkbox" name="mine" value="1" {% if f.mine %}checked{% endif %}> {% t "只看我的" %}</label>
+  <label style="flex-direction:row; align-items:center; gap:6px"><input type="checkbox" name="all_revisions" value="1" {% if f.all_revisions %}checked{% endif %}> {% t "顯示所有版本" %}</label>
+  <button class="btn secondary" type="submit">{% t "篩選" %}</button>
+</form>
+
+<table id="quote-table">
+  <thead>
+    <tr>
+      <th>{% t "報價編號" %}</th><th>{% t "客戶名稱" %}</th><th>{% t "工程名稱及地址" %}</th>
+      <th class="num">{% t "項目" %}</th>
+      {% if can_see_price %}<th class="num">{% t "合計 (HK$)" %}</th>{% endif %}
+      <th>{% t "狀態" %}</th><th>{% t "建立人" %}</th><th>{% t "最後修改" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for q in page %}
+    <tr>
+      <td style="white-space:nowrap"><a href="{% url 'quote_detail' q.pk %}">{{ q.label }}</a></td>
+      <td>{{ q.customer_name|default:"—" }}</td>
+      <td>{{ q.project|default:"—"|linebreaksbr }}</td>
+      <td class="num">{{ q.item_count }}</td>
+      {% if can_see_price %}<td class="num">{% if q.priced_total is not None %}{{ q.priced_total|floatformat:2 }}{% else %}—{% endif %}</td>{% endif %}
+      <td>{% include "quotes/_status.html" %}</td>
+      <td>{{ q.created_by.username|default:"—" }}</td>
+      <td style="white-space:nowrap">{{ q.updated_at|date:"Y-m-d H:i" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8" class="muted">{% t "未有報價" %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if page.has_other_pages %}
+<p style="margin-top:12px">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ f.q|urlencode }}&status={{ f.status }}&mine={{ f.mine }}{% if f.all_revisions %}&all_revisions=1{% endif %}">← {% t "上一頁" %}</a>{% endif %}
+  <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ f.q|urlencode }}&status={{ f.status }}&mine={{ f.mine }}{% if f.all_revisions %}&all_revisions=1{% endif %}">{% t "下一頁" %} →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}
