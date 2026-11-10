@@ -109,8 +109,8 @@ class QuoteTests(TestCase):
         self.assertEqual(item.area, Decimal("100.00"))
         self.assertTrue(item.include_prices)
         self.assertFalse(item.adjusted)
-        self.assertEqual(item.total_per_sqm, Decimal("174.71"))
-        self.assertEqual(item.grand_total, Decimal("17471.97"))
+        self.assertEqual(item.total_per_sqm, Decimal("196.54"))
+        self.assertEqual(item.grand_total, Decimal("19655.55"))
         board = self.board(item)
         self.assertEqual(board.unit_price, Decimal("350.00"))
         self.assertEqual(board.qty, Decimal("0.3695"))
@@ -118,7 +118,7 @@ class QuoteTests(TestCase):
         self.assertEqual(board.cost, Decimal("129.33"))
         self.assertEqual(board.state, QuotationLine.ORIGINAL)
         self.assertTrue(board.code)
-        self.assertEqual(quote.totals(), (Decimal("17471.97"), False))
+        self.assertEqual(quote.totals(), (Decimal("19655.55"), False))
 
     def test_later_price_change_does_not_affect_quote(self):
         quote = self.new_quote()
@@ -129,7 +129,7 @@ class QuoteTests(TestCase):
         self.client.get(reverse("quote_detail", args=[quote.pk]))
         item = QuotationItem.objects.get(quotation=quote)
         self.assertEqual(self.board(item).unit_price, Decimal("350.00"))
-        self.assertEqual(item.grand_total, Decimal("17471.97"))
+        self.assertEqual(item.grand_total, Decimal("19655.55"))
 
     def test_adjusted_lines_are_saved(self):
         payload = self.payload_for(self.est)
@@ -277,7 +277,7 @@ class QuoteTests(TestCase):
         resp = self.edit_post(item)
         self.assertEqual(resp.status_code, 302)
         item.refresh_from_db()
-        self.assertEqual(item.grand_total, Decimal("17471.97"))
+        self.assertEqual(item.grand_total, Decimal("19655.55"))
         self.assertEqual(item.title, "1/F")
         self.assertFalse(item.lines.exclude(state=QuotationLine.ORIGINAL).exists())
 
@@ -354,7 +354,7 @@ class QuoteTests(TestCase):
         self.assertEqual(rev_b.created_by, self.est)
         self.assertEqual(rev_b.revised_from, quote)
         item_b = rev_b.items.get()
-        self.assertEqual(item_b.grand_total, Decimal("17471.97"))
+        self.assertEqual(item_b.grand_total, Decimal("19655.55"))
         self.assertEqual(item_b.lines.count(), quote.items.get().lines.count())
         # 修改新版本不影響舊版本
         self.edit_post(item_b, changes={0: {"unit_price": "330"}})
@@ -433,7 +433,7 @@ class QuoteTests(TestCase):
         self.assertRedirects(resp, reverse("quote_detail", args=[quote.pk]))
         item = quote.items.get()
         self.assertTrue(item.include_prices)
-        self.assertEqual(item.grand_total, Decimal("17471.97"))
+        self.assertEqual(item.grand_total, Decimal("19655.55"))
         self.assertEqual(self.board(item).order_qty, Decimal("37"))
         # 別人的計價紀錄不可以轉換
         self.client.force_login(self.est2)

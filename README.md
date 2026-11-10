@@ -2,7 +2,16 @@
 
 輸入 **品牌 → 系統 → 耐火時間**，計出每 m² 材料用量和每項價錢。
 
-- 第一版數據：Promat · Enclosure · 1 / 2 / 4 小時（根據 Easy Smart Promat Enclosure System 圖則 01-03-2024 及供應商報價單）
+- 系統類型：**Enclosure for Ceiling**、**Enclosure for Gas Pipe**、**Partition**（Partition 未有數據）
+- 數據：Promat · Enclosure for Ceiling / Gas Pipe · 1 / 2 / 4 小時。板、岩棉和鐵料規格根據 Easy Smart Promat Enclosure System 圖則 01-03-2024 及供應商報價單；槽鐵和角鐵按每 m² 固定支數（另加 10% 損耗）：
+
+  | 每 m² 支數（未計損耗） | Ceiling | Gas Pipe |
+  |---|---|---|
+  | 槽鐵 | 1.0815 | 0.67 |
+  | 連牆角鐵 | 0.8605 | 0.05 |
+  | 連板角鐵 | 待定 | 1.36 |
+
+  更新到這個版本時，migration 0004 會把現有 Enclosure 改名為 Enclosure for Ceiling 並更新槽鐵和連牆角鐵（管理員已手動改過的不會覆蓋）；Gas Pipe 系統由 seed_data 在啟動時自動建立。
 - 技術：Django 5.2 + PostgreSQL 16，用 Docker Compose 部署
 - Partition 和 Durasteel 之後在「系統管理」加入數據即可，不用改程式
 
@@ -280,7 +289,7 @@ python manage.py runserver
 
 **建立**
 - 計價頁算出結果後按「**另存為報價**」（有沒有臨時調整都可以），選「建立新報價」或「加入現有報價（草稿）」，可填「位置 / 說明」（例如 1/F 走廊）。
-- 一張報價可以有**多個項目**（例如 Enclosure 2hr 120 m² + Partition 1hr 80 m²），每個項目有自己的總面積。
+- 一張報價可以有**多個項目**（例如 Enclosure for Ceiling 2hr 120 m² + Enclosure for Gas Pipe 1hr 80 m²），每個項目有自己的總面積。
 - 在報價頁按「＋ 從計價加入項目」→ 計算 → 「另存為報價」，會預先選好這張報價。
 - 在「計價紀錄」的查看頁按「**轉為報價**」，會直接複製當時的快照數字。
 

@@ -92,7 +92,8 @@ class MaterialPrice(models.Model):
 
 class FireSystem(models.Model):
     BRAND_CHOICES = [("PROMAT", "Promat"), ("DURASTEEL", "Durasteel")]
-    TYPE_CHOICES = [(1, "Enclosure"), (2, "Partition")]
+    # 編號不變（舊的 1 = Enclosure 現在是 Enclosure for Ceiling），下拉選單按這個次序
+    TYPE_CHOICES = [(1, "Enclosure for Ceiling"), (3, "Enclosure for Gas Pipe"), (2, "Partition")]
     HOURS_CHOICES = [(1, tl("1 小時")), (2, tl("2 小時")), (4, tl("4 小時"))]
 
     brand = models.CharField(tl("品牌"), max_length=20, choices=BRAND_CHOICES)

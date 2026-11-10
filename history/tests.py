@@ -36,8 +36,8 @@ class HistoryTests(TestCase):
         self.assertEqual(rec.fire_rating_hours, 2)
         self.assertEqual(rec.area, Decimal("100.00"))
         self.assertTrue(rec.include_prices)
-        self.assertEqual(rec.total_per_sqm, Decimal("174.71"))
-        self.assertEqual(rec.grand_total, Decimal("17471.97"))
+        self.assertEqual(rec.total_per_sqm, Decimal("196.54"))
+        self.assertEqual(rec.grand_total, Decimal("19655.55"))
         board = next(l for l in rec.lines if l["item_no"] == 1)
         self.assertEqual(board["unit_price"], "350.00")
         self.assertEqual(board["order_qty"], "37")
@@ -128,7 +128,7 @@ class HistoryTests(TestCase):
         rec = CalcRecord.objects.get(user=self.est)
         resp = self.client.get(reverse("history_detail", args=[rec.pk]))
         self.assertTrue(resp.context["show_prices"])
-        self.assertContains(resp, "17471.97")
+        self.assertContains(resp, "19655.55")
 
     def test_list_requires_login(self):
         self.assertEqual(self.client.get(reverse("history_list")).status_code, 302)

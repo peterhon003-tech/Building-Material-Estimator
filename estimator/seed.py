@@ -91,6 +91,57 @@ SYSTEMS = [
 ]
 
 
+# ---------- 系統類型 ----------
+# 現有 Enclosure 配方（板、岩棉、鐵料規格）同時用於 Ceiling 和 Gas Pipe，
+# 只是槽鐵和角鐵改為「每 m² 固定支數」（未計損耗，再加 STEEL_WASTE %）。
+CEILING, PARTITION, GAS_PIPE = 1, 2, 3
+STEEL_WASTE = "10"
+# 系統類型 → {圖例編號: 每 m² 支數}；None = 待定
+STEEL_QTY = {
+    CEILING: {2: "1.0815", 3: "0.8605", 4: None},
+    GAS_PIPE: {2: "0.67", 3: "0.05", 4: "1.36"},
+}
+STEEL_LABEL = {CEILING: "Ceiling", GAS_PIPE: "Gas Pipe"}
+
+
+def steel_note(system_type, qty, extra=""):
+    """槽鐵 / 角鐵的備註，例如「Ceiling：每 m² 1.0815 支（未計損耗）」。"""
+    if qty is None:
+        base = "每 m² 數量待定"
+    else:
+        base = f"{STEEL_LABEL[system_type]}：每 m² {qty} 支（未計損耗）"
+    return f"{base}；{extra}" if extra else base
+
+
+def steel_note_en(system_type, qty, extra_en=""):
+    if qty is None:
+        base = "Quantity per m² to be confirmed"
+    else:
+        base = f"{STEEL_LABEL[system_type]}: {qty} pcs per m² (before wastage)"
+    return f"{base}; {extra_en}" if extra_en else base
+
+
+SPEC_NOTE = "報價單寫 1.0×50×100×50，請確認規格"
+SPEC_NOTE_EN = "quotation shows 1.0×50×100×50, please confirm the size"
+
+
+def _with_steel(base, system_type):
+    """按 Enclosure 配方產生指定系統類型的配方。"""
+    spec = {**base, "system_type": system_type, "components": []}
+    for c in base["components"]:
+        item, desc, mcode, method, layers, spacing, fixed, waste, note = c
+        if item in STEEL_QTY[system_type]:
+            qty = STEEL_QTY[system_type][item]
+            extra = SPEC_NOTE if SPEC_NOTE in note else ""
+            c = (item, desc, mcode, "FIXED", 1, None, qty, STEEL_WASTE, steel_note(system_type, qty, extra))
+        spec["components"].append(c)
+    return spec
+
+
+ENCLOSURE_BASE = SYSTEMS
+SYSTEMS = [_with_steel(s, t) for t in (CEILING, GAS_PIPE) for s in ENCLOSURE_BASE]
+
+
 # ---------- 英文名稱（英文介面用；簡體會自動由繁體轉換）----------
 # 材料編號 → (英文名稱, 英文規格)。留空 = 和中文相同
 MATERIALS_EN = {
@@ -134,3 +185,7 @@ NOTES_EN = {
     "@610mm c/c；報價單寫 1.0×50×100×50，請確認規格":
         "@610mm c/c; quotation shows 1.0×50×100×50, please confirm the size",
 }
+for _t, _items in STEEL_QTY.items():
+    for _q in _items.values():
+        NOTES_EN[steel_note(_t, _q)] = steel_note_en(_t, _q)
+        NOTES_EN[steel_note(_t, _q, SPEC_NOTE)] = steel_note_en(_t, _q, SPEC_NOTE_EN)

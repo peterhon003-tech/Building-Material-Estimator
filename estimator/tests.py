@@ -40,7 +40,7 @@ class SeedAndViewTests(TestCase):
 
     def test_seed_is_idempotent(self):
         call_command("seed_data", verbosity=0)
-        self.assertEqual(FireSystem.objects.count(), 3)
+        self.assertEqual(FireSystem.objects.count(), 6)        # Ceiling + Gas Pipe，各 1 / 2 / 4 小時
         self.assertEqual(MaterialPrice.objects.filter(material__code="PTH-09").count(), 1)
 
     def test_two_hour_result(self):
@@ -48,10 +48,12 @@ class SeedAndViewTests(TestCase):
         r = services.calculate(system)
         costs = {l.item_no: l.cost for l in r.lines}
         self.assertEqual(costs[1], Decimal("129.33"))   # 板
-        self.assertEqual(costs[2], Decimal("13.30"))    # 槽鐵
+        self.assertEqual(costs[2], Decimal("21.41"))    # 槽鐵 1.0815 × 1.1 × 18
+        self.assertEqual(costs[3], Decimal("13.72"))    # 連牆角鐵 0.8605 × 1.1 × 14.50
+        self.assertIsNone(costs[4])                     # 連板角鐵：待定
         self.assertEqual(costs[5], Decimal("32.08"))    # 岩棉 1.1 ÷ 0.72 × 21
-        self.assertEqual(r.total, Decimal("174.71"))
-        self.assertEqual(len(r.pending_lines), 5)
+        self.assertEqual(r.total, Decimal("196.54"))
+        self.assertEqual(len(r.pending_lines), 4)
 
     def test_four_hour_two_layers_rockwool(self):
         r = services.calculate(services.find_system("PROMAT", 1, 4))
@@ -64,7 +66,7 @@ class SeedAndViewTests(TestCase):
         self.client.force_login(estimator)
         resp = self.client.get(reverse("calculator"), {"brand": "PROMAT", "system_type": "1", "hours": "2"})
         self.assertContains(resp, "R23J17-1A")
-        self.assertContains(resp, "174.71")
+        self.assertContains(resp, "196.54")
         self.assertContains(resp, "單價 (HK$)")
         self.assertContains(resp, "原料價錢")                       # 選單有價錢頁
         self.assertEqual(self.client.get(reverse("price_list")).status_code, 200)
@@ -78,7 +80,7 @@ class SeedAndViewTests(TestCase):
         self.assertNotContains(resp, "單價 (HK$)")
         self.assertNotContains(resp, "129.33")
         self.assertNotContains(resp, "350.00")
-        self.assertNotContains(resp, "174.71")
+        self.assertNotContains(resp, "196.54")
         self.assertNotContains(resp, "WinTech")
         self.assertNotContains(resp, "原料價錢")
         self.assertEqual(self.client.get(reverse("price_list")).status_code, 403)
@@ -439,7 +441,7 @@ class ViewModeTests(TestCase):
         self.client.force_login(self.estimator)
         resp = self.client.get(reverse("calculator"), self.params)
         self.assertContains(resp, 'name="view" value="material"')
-        self.assertContains(resp, "174.71")
+        self.assertContains(resp, "196.54")
         self.assertContains(resp, "匯出 Excel（包括價錢）")
 
     def test_estimator_material_only_view(self):
@@ -492,15 +494,15 @@ class AreaTests(TestCase):
         self.assertEqual(board.total_qty, Decimal("36.9524"))
         self.assertEqual(board.order_qty, Decimal("37"))
         self.assertEqual(board.total_cost, Decimal("12933.35"))
-        self.assertEqual(r.grand_total, Decimal("17471.97"))   # 板 + 槽鐵 + 岩棉
+        self.assertEqual(r.grand_total, Decimal("19655.55"))   # 板 + 槽鐵 + 連牆角鐵 + 岩棉
 
     def test_page_with_area_and_prices(self):
         self.client.force_login(self.estimator)
         resp = self.client.get(reverse("calculator"), self.params)
         self.assertContains(resp, "總面積 100.00 m²")
         self.assertContains(resp, "12933.35")
-        self.assertContains(resp, "17471.97")
-        self.assertContains(resp, "174.71")                   # 每 m² 合計仍然顯示
+        self.assertContains(resp, "19655.55")
+        self.assertContains(resp, "196.54")                   # 每 m² 合計仍然顯示
 
     def test_page_with_area_material_only(self):
         self.client.force_login(self.plain)
@@ -514,7 +516,7 @@ class AreaTests(TestCase):
         self.client.force_login(self.estimator)
         resp = self.client.get(reverse("calculator"), {**self.params, "area": "abc"})
         self.assertContains(resp, "總面積必須是數字")
-        self.assertContains(resp, "174.71")
+        self.assertContains(resp, "196.54")
         self.assertNotContains(resp, "訂購數量")
 
     def test_export_with_area(self):
@@ -854,7 +856,7 @@ class ProductOptionTests(TestCase):
         heavy = next(o for o in channel["options"] if o["code"] == "CH-100x50x100x1.0")
         self.assertFalse(heavy["original"])
         self.assertEqual(heavy["unit_price"], "33.00")
-        self.assertEqual(round(float(heavy["qty"]), 4), 0.7390)        # 伺服器按該組件的間距計好
+        self.assertEqual(round(float(heavy["qty"]), 4), 1.1897)        # 伺服器按該組件的設定計好（1.0815 × 1.1）
 
     def test_board_options_only_boards(self):
         data = self._data(self.estimator)
@@ -891,3 +893,70 @@ class ProductOptionTests(TestCase):
         notes = " ".join(str(c) for row in ws.iter_rows(values_only=True) for c in row if isinstance(c, str))
         self.assertIn("已替換：G.I. 槽鐵 50×50×50×0.8mm × 8尺 → G.I. 槽鐵 100×50×100×1.0mm × 8尺", notes)
         self.assertIn("不在測試報告配方內", notes)
+
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class SystemTypeTests(TestCase):
+    """Enclosure for Ceiling / Enclosure for Gas Pipe / Partition。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+
+    def _costs(self, system_type, hours=2):
+        r = services.calculate(services.find_system("PROMAT", system_type, hours))
+        return {l.item_no: l for l in r.lines}, r
+
+    def test_type_choices_order(self):
+        self.assertEqual([v for v, _ in FireSystem.TYPE_CHOICES], [1, 3, 2])
+        self.assertEqual(dict(FireSystem.TYPE_CHOICES)[1], "Enclosure for Ceiling")
+
+    def test_ceiling_steel_quantities(self):
+        lines, _ = self._costs(1)
+        self.assertEqual(lines[2].qty, Decimal("1.1897"))         # 槽鐵 1.0815 × 1.1
+        self.assertEqual(lines[3].qty, Decimal("0.9466"))         # 連牆角鐵 0.8605 × 1.1
+        self.assertIsNone(lines[4].qty)                           # 連板角鐵：待定
+
+    def test_gas_pipe_steel_quantities_and_costs(self):
+        lines, r = self._costs(3)
+        self.assertEqual((lines[2].qty, lines[2].cost), (Decimal("0.7370"), Decimal("13.27")))   # 0.67 × 1.1 × 18
+        self.assertEqual((lines[3].qty, lines[3].cost), (Decimal("0.0550"), Decimal("0.80")))    # 0.05 × 1.1 × 14.50
+        self.assertEqual((lines[4].qty, lines[4].cost), (Decimal("1.4960"), Decimal("16.46")))   # 1.36 × 1.1 × 11
+        self.assertEqual(lines[1].cost, Decimal("129.33"))         # 板和岩棉與 Ceiling 相同
+        self.assertEqual(lines[5].cost, Decimal("32.08"))
+        self.assertEqual(r.total, Decimal("191.94"))
+
+    def test_gas_pipe_all_hours(self):
+        for hours in (1, 2, 4):
+            lines, _ = self._costs(3, hours)
+            self.assertEqual(lines[2].qty, Decimal("0.7370"))
+            self.assertEqual(lines[4].qty, Decimal("1.4960"))
+
+    def test_calculator_dropdown_and_gas_pipe_page(self):
+        user = User.objects.create_user("st_est", password="pw-12345-x")
+        user.groups.add(Group.objects.get(name="估價員"))
+        self.client.force_login(user)
+        resp = self.client.get(reverse("calculator"), {"brand": "PROMAT", "system_type": "3", "hours": "2"})
+        self.assertContains(resp, '<option value="3" selected>Enclosure for Gas Pipe</option>', html=True)
+        self.assertEqual(resp.context["result"].system.system_type, 3)
+        self.assertEqual(resp.context["availability"]["PROMAT"]["3"], [1, 2, 4])
+
+    def test_migration_updates_old_enclosure_but_keeps_manual_changes(self):
+        import importlib
+        from django.apps import apps
+        migration = importlib.import_module("estimator.migrations.0004_ceiling_gas_pipe")
+        two = services.find_system("PROMAT", 1, 2)
+        four = services.find_system("PROMAT", 1, 4)
+        # 還原為舊的 Enclosure 設定
+        for s in (two, four):
+            s.components.filter(item_no=2).update(method="SPACING", spacing_m=Decimal("0.610"),
+                                                  fixed_qty_per_sqm=None, note="@610mm c/c")
+            s.components.filter(item_no=3).update(fixed_qty_per_sqm=None, note="每 m² 數量待定")
+        four.components.filter(item_no=3).update(fixed_qty_per_sqm=Decimal("0.5"))   # 管理員改過
+        migration.update_ceiling(apps, None)
+        ch = two.components.get(item_no=2)
+        self.assertEqual((ch.method, ch.spacing_m, ch.fixed_qty_per_sqm, ch.wastage_pct),
+                         ("FIXED", None, Decimal("1.0815"), Decimal("10")))
+        self.assertEqual(two.components.get(item_no=3).fixed_qty_per_sqm, Decimal("0.8605"))
+        self.assertEqual(four.components.get(item_no=3).fixed_qty_per_sqm, Decimal("0.5"))   # 沒有覆蓋
+        self.assertTrue(ch.note_en.startswith("Ceiling: 1.0815"))

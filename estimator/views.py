@@ -138,7 +138,8 @@ def calculator_export(request):
 def _xlsx_response(content, system, with_prices, on_date, adjusted=False):
     kind = "price" if with_prices else "material"
     extra = "-adjusted" if adjusted else ""
-    filename = (f"{system.brand}-{dict(FireSystem.TYPE_CHOICES)[system.system_type]}-"
+    type_name = dict(FireSystem.TYPE_CHOICES)[system.system_type].replace(" ", "-")
+    filename = (f"{system.brand}-{type_name}-"
                 f"{system.fire_rating_hours}hr-{kind}{extra}-{on_date:%Y-%m-%d}.xlsx")
     resp = HttpResponse(
         content,
