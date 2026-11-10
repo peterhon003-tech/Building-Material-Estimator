@@ -15,9 +15,9 @@ from .export import build_calc_xlsx
 from . import services
 from .hooks import calculation_done
 from .forms import MaterialForm, PriceForm, PriceImportForm
-from .i18n import LANGUAGE_CODES, all_languages, localized, tr
+from .i18n import LANGUAGE_CODES, all_languages, tr
 from .middleware import SESSION_KEY as LANGUAGE_SESSION_KEY
-from .models import FireSystem, Material, MaterialPrice
+from .models import FireSystem, Material, MaterialPrice, SystemComponent
 
 IMPORT_SESSION_KEY = "price_import_rows"
 
@@ -246,24 +246,76 @@ def material_add(request):
     return render(request, "estimator/material_form.html", {"form": form})
 
 
-# ---------- Excel 批量更新價錢 ----------
+# ---------- Excel 批量更新（價錢、新增 / 修改 / 停用材料） ----------
+
+KNOWN_UNITS = ["張", "支", "件", "粒", "m²", "m", "米", "公斤", "kg", "套", "卷", "罐"]
+ACTION_WORDS = {"新增": ["add", "new"], "停用": ["deactivate", "disable"], "更新": ["update"]}
+
+
+def _import_options(request):
+    """parse_workbook 用的別名表和權限。"""
+    units = set(Material.objects.values_list("unit", flat=True)) | set(KNOWN_UNITS)
+    unit_aliases = {}
+    for u in units:
+        for alias in all_languages(u) | {u}:
+            key = alias.lower()
+            if key in unit_aliases and unit_aliases[key] not in (u, None):
+                unit_aliases[key] = None            # 不清楚（例如英文 pc 可以是「支」或「件」）
+            elif key not in unit_aliases:
+                unit_aliases[key] = u
+    for u in units:
+        unit_aliases[u.lower()] = u                 # 中文寫法一定清楚
+    category_aliases = {}
+    for code, zh in Material.CATEGORIES:
+        category_aliases[code.lower()] = code
+        for alias in all_languages(zh) | {zh}:
+            category_aliases[alias.lower()] = code
+    action_aliases = {}
+    for action, extra in ACTION_WORDS.items():
+        for alias in all_languages(action) | {action} | set(extra):
+            action_aliases[alias.lower()] = "" if action == importer.ACTION_UPDATE else action
+    return {
+        "header_aliases": {h: all_languages(h) for h in importer.HEADERS},
+        "category_aliases": category_aliases, "unit_aliases": unit_aliases, "action_aliases": action_aliases,
+        "category_names": {code: tr(zh) for code, zh in Material.CATEGORIES},
+        "can_add": request.user.has_perm("estimator.add_material"),
+        "can_change": request.user.has_perm("estimator.change_material"),
+    }
+
 
 def _materials_lookup():
+    """所有材料（包括已停用）的現時資料，用來比對上載的內容。"""
+    used = {}
+    for c in SystemComponent.objects.filter(system__active=True).select_related("system", "material"):
+        label = str(c.system)
+        used.setdefault(c.material.code, [])
+        if label not in used[c.material.code]:
+            used[c.material.code].append(label)
     data = {}
-    for m in Material.objects.filter(active=True):
-        p = m.current_price()
-        data[m.code] = (str(m), p.unit_price if p else None, p.effective_date if p else None)
+    for m in Material.objects.all():
+        p = m.current_price() if m.active else None
+        data[m.code] = importer.MaterialInfo(
+            name=m.name, spec=m.spec, name_en=m.name_en, spec_en=m.spec_en, category=m.category,
+            unit=m.unit, coverage=m.coverage, price=p.unit_price if p else None,
+            price_date=p.effective_date if p else None, active=m.active, used_in=used.get(m.code, []),
+            unit_names={u.lower() for u in all_languages(m.unit)})
     return data
 
 
 @permission_required("estimator.add_materialprice", raise_exception=True)
 def price_import_template(request):
     rows = []
+    names = {code: tr(zh) for code, zh in Material.CATEGORIES}
     for m in Material.objects.filter(active=True):
         p = m.current_price()
-        rows.append((m.code, localized(m.name, m.name_en), localized(m.spec, m.spec_en), m.display_unit(),
-                     p.unit_price if p else None, p.supplier if p else ""))
-    content = importer.build_template(rows, t=tr)
+        rows.append({
+            "code": m.code, "name": m.name, "spec": m.spec, "name_en": m.name_en, "spec_en": m.spec_en,
+            "category_label": names.get(m.category, m.category), "unit": m.display_unit(), "coverage": m.coverage,
+            "price": p.unit_price if p else None, "price_date": p.effective_date if p else None,
+            "supplier": p.supplier if p else "",
+        })
+    content = importer.build_template(rows, t=tr, categories=list(names.values()),
+                                      actions=[tr("更新"), tr("新增"), tr("停用")])
     resp = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -282,9 +334,9 @@ def price_import(request):
             result = importer.parse_workbook(
                 form.cleaned_data["file"], _materials_lookup(),
                 form.cleaned_data["default_supplier"], form.cleaned_data["default_date"], t=tr,
-                header_aliases={h: all_languages(h) for h in importer.HEADERS},
+                **_import_options(request),
             )
-            request.session[IMPORT_SESSION_KEY] = [r.to_session() for r in result.valid]
+            request.session[IMPORT_SESSION_KEY] = result.to_session()
     else:
         form = PriceImportForm()
     return render(request, "estimator/price_import.html", {"form": form, "result": result})
@@ -293,26 +345,71 @@ def price_import(request):
 @require_POST
 @permission_required("estimator.add_materialprice", raise_exception=True)
 def price_import_confirm(request):
-    rows = request.session.pop(IMPORT_SESSION_KEY, None)
-    if not rows:
+    data = request.session.pop(IMPORT_SESSION_KEY, None)
+    if isinstance(data, list):                       # 舊版本的預覽資料
+        data = {"prices": data}
+    if not data or not any(data.get(k) for k in ("prices", "new", "changes", "deactivate")):
         messages.error(request, tr("沒有可儲存的資料，請重新上載。"))
         return redirect("price_import")
 
     user = request.user.get_username()
-    materials = {m.code: m for m in Material.objects.filter(code__in=[r["code"] for r in rows])}
-    created = 0
+    can_add = request.user.has_perm("estimator.add_material")
+    can_change = request.user.has_perm("estimator.change_material")
+    counts = {"new": 0, "changes": 0, "deactivate": 0, "prices": 0}
+    skipped = []
     with transaction.atomic():
-        for r in rows:
+        # 1. 新增材料（先做，之後的價錢才找得到）
+        for r in data.get("new", []) if can_add else []:
+            if Material.objects.filter(code=r["code"]).exists():
+                skipped.append(r["code"])
+                continue
+            f = r["fields"]
+            Material.objects.create(code=r["code"], name=f["name"], spec=f["spec"], name_en=f["name_en"],
+                                    spec_en=f["spec_en"], category=f["category"], unit=f["unit"],
+                                    coverage=Decimal(f["coverage"]))
+            counts["new"] += 1
+        # 2. 修改材料資料
+        allowed = {key for _, key in importer.DETAIL_FIELDS}
+        for r in data.get("changes", []) if can_change else []:
+            m = Material.objects.filter(code=r["code"], active=True).first()
+            if not m:
+                skipped.append(r["code"])
+                continue
+            fields = []
+            for key, value in r["values"].items():
+                if key in allowed:
+                    setattr(m, key, Decimal(value) if key == "coverage" else value)
+                    fields.append(key)
+            if fields:
+                m.save(update_fields=fields)
+                counts["changes"] += 1
+        # 3. 停用材料（再檢查一次是否仍在使用中的系統）
+        for r in data.get("deactivate", []) if can_change else []:
+            m = Material.objects.filter(code=r["code"], active=True).first()
+            if not m or SystemComponent.objects.filter(material=m, system__active=True).exists():
+                skipped.append(r["code"])
+                continue
+            m.active = False
+            m.save(update_fields=["active"])
+            counts["deactivate"] += 1
+        # 4. 價錢
+        materials = {m.code: m for m in Material.objects.filter(
+            code__in=[r["code"] for r in data.get("prices", [])], active=True)}
+        for r in data.get("prices", []):
             m = materials.get(r["code"])
             if not m:
+                skipped.append(r["code"])
                 continue
             MaterialPrice.objects.create(
                 material=m, unit_price=Decimal(r["new_price"]), supplier=r["supplier"],
                 effective_date=date.fromisoformat(r["effective_date"]),
                 note=r["note"] or tr("Excel 匯入"), updated_by=user,
             )
-            created += 1
-    messages.success(request, tr("已從 Excel 更新 {n} 項價錢。", n=created))
+            counts["prices"] += 1
+    messages.success(request, tr("已儲存：新增材料 {a} 項、修改材料資料 {b} 項、停用材料 {c} 項、更新價錢 {d} 項。",
+                                 a=counts["new"], b=counts["changes"], c=counts["deactivate"], d=counts["prices"]))
+    if skipped:
+        messages.warning(request, tr("以下項目在預覽後已被改動，未有儲存：{codes}", codes="、".join(sorted(set(skipped)))))
     return redirect("price_list")
 
 

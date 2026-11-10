@@ -14,7 +14,7 @@ from estimator.seed import COMPONENTS_EN, DRAWING, MATERIALS, MATERIALS_EN, NOTE
 ESTIMATOR_GROUP = "估價員"
 ESTIMATOR_PERMS = ["view_material", "view_materialprice"]
 PRICE_MANAGER_GROUP = "價錢管理員"
-PRICE_MANAGER_PERMS = ["view_material", "add_material", "view_materialprice", "add_materialprice"]
+PRICE_MANAGER_PERMS = ["view_material", "add_material", "change_material", "view_materialprice", "add_materialprice"]
 
 
 def _dec(v):

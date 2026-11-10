@@ -11,6 +11,7 @@
   <ol style="margin:0; padding-left:20px">
     <li><a href="{% url 'price_import_template' %}">{% t "下載範本" %}</a>{% t "（已列出所有材料和現時價錢）" %}</li>
     <li>{% t "在黃色欄填寫「新單價」，需要時填供應商、生效日期、備註" %}</li>
+    <li>{% t "需要時修改藍色欄的材料資料；「動作」欄填「新增」可加入新材料，填「停用」可停用材料" %}</li>
     <li>{% t "在下面上載，先看預覽，確認後才會儲存" %}</li>
   </ol>
 </div>
@@ -33,6 +34,7 @@
   <h2>{% t "預覽" %}</h2>
   <p class="muted">
     {% t "可更新 {a} 項 · 有錯誤 {b} 行 · 價錢和日期沒有變動 {c} 項（不處理）" a=result.valid|length b=result.errors|length c=result.unchanged|length %}
+    <br>{% t "新增材料 {a} 項 · 修改材料資料 {b} 項 · 停用材料 {c} 項" a=result.new|length b=result.changes|length c=result.deactivate|length %}
   </p>
 
   {% if result.errors %}
@@ -44,14 +46,57 @@
   </div>
   {% endif %}
 
+  {% if result.new %}
+  <h3 id="preview-new">{% t "新增材料" %}（{{ result.new|length }}）</h3>
+  <table>
+    <thead><tr><th>{% t "行" %}</th><th>{% t "編號" %}</th><th>{% t "中文名稱" %}</th><th>{% t "中文規格" %}</th><th>{% t "英文名稱" %}</th><th>{% t "類別" %}</th><th>{% t "計價單位" %}</th><th class="num">{% t "每單位涵蓋量" %}</th></tr></thead>
+    <tbody>
+      {% for r in result.new %}
+      <tr><td>{{ r.row }}</td><td>{{ r.code }}</td><td>{{ r.fields.name }}</td><td>{{ r.fields.spec }}</td><td>{{ r.fields.name_en }}</td><td>{{ r.category_label }}</td><td>{{ r.fields.unit }}</td><td class="num">{{ r.fields.coverage|floatformat:"-4" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if result.changes %}
+  <h3 id="preview-changes">{% t "修改材料資料" %}（{{ result.changes|length }}）</h3>
+  <table>
+    <thead><tr><th>{% t "行" %}</th><th>{% t "編號" %}</th><th>{% t "材料" %}</th><th>{% t "改動" %}</th></tr></thead>
+    <tbody>
+      {% for r in result.changes %}
+      <tr{% if r.coverage_changed %} class="pending"{% endif %}>
+        <td>{{ r.row }}</td><td>{{ r.code }}</td><td>{{ r.name }}</td>
+        <td>{% for label, old, new in r.changes %}{{ label }}：{{ old }} → <strong>{{ new }}</strong>{% if not forloop.last %}<br>{% endif %}{% endfor %}
+          {% if r.coverage_changed %}<br><span style="color:#9a6700">⚠ {% t "每單位涵蓋量改動會影響所有用到這材料的系統計算。" %}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if result.deactivate %}
+  <h3 id="preview-deactivate">{% t "停用材料" %}（{{ result.deactivate|length }}）</h3>
+  <table>
+    <thead><tr><th>{% t "行" %}</th><th>{% t "編號" %}</th><th>{% t "材料" %}</th></tr></thead>
+    <tbody>
+      {% for r in result.deactivate %}<tr><td>{{ r.row }}</td><td>{{ r.code }}</td><td>{{ r.name }}</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">{% t "停用後材料不會出現在範本和選擇清單，紀錄會保留，可在系統管理重新啟用。" %}</p>
+  {% endif %}
+
   {% if result.valid %}
-  <table style="margin-top:16px">
+  <h3 id="preview-prices">{% t "更新價錢" %}（{{ result.valid|length }}）</h3>
+  {% if result.warning_count %}
+  <div class="warnbox">⚠ {% t "{n} 項的生效日期不比現時價錢晚，請檢查標示 ⚠ 的行。" n=result.warning_count %}</div>
+  {% endif %}
+  <table style="margin-top:8px">
     <thead>
       <tr><th>{% t "行" %}</th><th>{% t "編號" %}</th><th>{% t "材料" %}</th><th class="num">{% t "現時單價" %}</th><th class="num">{% t "新單價" %}</th><th class="num">{% t "變動" %}</th><th>{% t "供應商" %}</th><th>{% t "生效日期" %}</th><th>{% t "備註" %}</th></tr>
     </thead>
     <tbody>
       {% for r in result.valid %}
-      <tr>
+      <tr{% if r.warning %} class="pending"{% endif %}>
         <td>{{ r.row }}</td>
         <td>{{ r.code }}</td>
         <td>{{ r.name }}</td>
@@ -59,19 +104,22 @@
         <td class="num"><strong>{{ r.new_price|floatformat:2 }}</strong></td>
         <td class="num">{% if r.old_price is not None %}{% if r.new_price > r.old_price %}↑{% elif r.new_price < r.old_price %}↓{% else %}={% endif %}{% else %}{% t "新" %}{% endif %}</td>
         <td>{{ r.supplier }}</td>
-        <td>{{ r.effective_date|date:"Y-m-d" }}</td>
+        <td>{{ r.effective_date|date:"Y-m-d" }}{% if r.warning %}<br><span style="color:#9a6700">⚠ {{ r.warning }}</span>{% endif %}</td>
         <td>{{ r.note }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}
+
+  {% if result.has_updates %}
   <form method="post" action="{% url 'price_import_confirm' %}" style="margin-top:16px">
     {% csrf_token %}
-    <button class="btn" type="submit">{% t "確認儲存 {n} 項價錢" n=result.valid|length %}</button>
+    <button class="btn" type="submit">{% t "確認儲存 {n} 項變更" n=result.update_count %}</button>
     <a class="btn secondary" href="{% url 'price_import' %}">{% t "取消" %}</a>
   </form>
   {% else %}
-  <div class="warnbox">{% t "沒有可更新的價錢。請檢查「新單價」欄是否已填寫。" %}</div>
+  <div class="warnbox">{% t "沒有可更新的內容。請檢查「新單價」欄或材料資料是否已填寫。" %}</div>
   {% endif %}
 {% endif %}
 {% endblock %}

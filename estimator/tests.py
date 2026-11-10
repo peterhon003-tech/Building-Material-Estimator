@@ -8,6 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from . import calc, services
+from . import price_import as importer
 from .models import FireSystem, Material, MaterialPrice
 
 
@@ -186,21 +187,48 @@ class AdminAndImportTests(TestCase):
         self.assertEqual(self.client.get(reverse("material_add")).status_code, 403)
 
     # --- 4. Excel 批量更新 ---
-    def _xlsx(self, edits):
+    def _sheet(self, user=None):
         from io import BytesIO
         from openpyxl import load_workbook
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        self.client.force_login(self.manager)
+        self.client.force_login(user or self.manager)
         resp = self.client.get(reverse("price_import_template"))
         self.assertEqual(resp.status_code, 200)
         wb = load_workbook(BytesIO(resp.content))
-        ws = wb.active
-        codes = {ws.cell(r, 1).value: r for r in range(2, ws.max_row + 1)}
+        return wb, wb.active
+
+    def _rows(self, ws):
+        C = importer.COL
+        return {ws.cell(r, C["編號"]).value: r for r in range(2, ws.max_row + 1) if ws.cell(r, C["編號"]).value}
+
+    def _upload(self, wb, default_date=None, **extra):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        out = BytesIO()
+        wb.save(out)
+        return self.client.post(reverse("price_import"), {
+            "file": SimpleUploadedFile("prices.xlsx", out.getvalue()),
+            "default_date": default_date or date.today().isoformat(), **extra})
+
+    def _xlsx(self, edits):
+        """edits：{編號: 新單價}，傳回可上載的檔案。"""
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        wb, ws = self._sheet()
+        rows = self._rows(ws)
         for code, price in edits.items():
-            ws.cell(codes[code], 6).value = price
+            ws.cell(rows[code], importer.COL["新單價"]).value = price
         out = BytesIO()
         wb.save(out)
         return SimpleUploadedFile("prices.xlsx", out.getvalue())
+
+    def _set_row(self, ws, row, **values):
+        """values 的 key 用欄名，例如 中文名稱="..."。"""
+        for header, value in values.items():
+            ws.cell(row, importer.COL[header]).value = value
+
+    def _blank_row(self, ws):
+        C = importer.COL
+        return next(r for r in range(2, ws.max_row + 2) if not ws.cell(r, C["編號"]).value)
 
     def test_import_preview_then_confirm(self):
         f = self._xlsx({"PTH-09": 380, "FX-M4-SCREW": 0.35, "AG-50x50x1.0": "abc"})
@@ -228,6 +256,119 @@ class AdminAndImportTests(TestCase):
         self.client.force_login(self.viewer)
         self.assertEqual(self.client.get(reverse("price_import")).status_code, 403)
         self.assertEqual(self.client.get(reverse("price_import_template")).status_code, 403)
+
+    def test_template_columns_and_current_values(self):
+        C = importer.COL
+        wb, ws = self._sheet()
+        self.assertEqual([c.value for c in ws[1]], importer.HEADERS)
+        rows = self._rows(ws)
+        r = rows["PTH-09"]
+        m = Material.objects.get(code="PTH-09")
+        self.assertEqual(ws.cell(r, C["中文名稱"]).value, m.name)
+        self.assertEqual(ws.cell(r, C["類別"]).value, "板")
+        self.assertEqual(ws.cell(r, C["計價單位"]).value, "張")
+        self.assertAlmostEqual(ws.cell(r, C["每單位涵蓋量"]).value, 2.9768)
+        current = ws.cell(r, C["現時生效日期"])
+        self.assertEqual(current.value.date(), m.current_price().effective_date)
+        self.assertEqual(current.number_format, "yyyy-mm-dd")
+        self.assertIsNone(ws.cell(r, C["生效日期"]).value)                     # 要填的生效日期：留空
+        self.assertIsNone(ws.cell(rows["FX-M4-SCREW"], C["現時生效日期"]).value)  # 未有價錢
+
+    def test_unchanged_template_has_nothing_to_update(self):
+        wb, ws = self._sheet()
+        resp = self._upload(wb)
+        self.assertFalse(resp.context["result"].has_updates)
+        self.assertEqual(resp.context["result"].errors, [])
+
+    def test_preview_warns_when_date_not_later_than_current(self):
+        f = self._xlsx({"PTH-09": 380})
+        resp = self.client.post(reverse("price_import"), {"file": f, "default_date": "2020-01-01"})
+        self.assertContains(resp, "可更新 1 項")
+        self.assertEqual(resp.context["result"].warning_count, 1)
+        self.assertIn("2020-01-01", resp.context["result"].valid[0].warning)
+        f = self._xlsx({"PTH-09": 380})
+        resp = self.client.post(reverse("price_import"), {"file": f, "default_date": date.today().isoformat()})
+        self.assertEqual(resp.context["result"].warning_count, 0)
+        self.client.post(reverse("price_import_confirm"))               # 有提示也可以儲存
+        self.assertEqual(Material.objects.get(code="PTH-09").current_price().unit_price, Decimal("380.00"))
+
+    def test_price_manager_can_change_materials(self):
+        self.assertTrue(self.manager.has_perm("estimator.change_material"))
+        self.assertTrue(self.manager.has_perm("estimator.add_material"))
+
+    def test_add_new_material_with_price(self):
+        wb, ws = self._sheet()
+        r = self._blank_row(ws)
+        self._set_row(ws, r, 動作="新增", 編號="pth-30", 中文名稱="Promatect-H", 中文規格="30mm",
+                      英文名稱="Promatect-H", 類別="板", 計價單位="張", 每單位涵蓋量=2.9768, 新單價=1100)
+        resp = self._upload(wb)
+        result = resp.context["result"]
+        self.assertEqual([n.code for n in result.new], ["PTH-30"])
+        self.assertEqual([p.code for p in result.valid], ["PTH-30"])
+        self.assertFalse(Material.objects.filter(code="PTH-30").exists())     # 未確認前不儲存
+        self.client.post(reverse("price_import_confirm"))
+        m = Material.objects.get(code="PTH-30")
+        self.assertEqual((m.name, m.spec, m.category, m.unit, m.coverage, m.active),
+                         ("Promatect-H", "30mm", "BOARD", "張", Decimal("2.9768"), True))
+        self.assertEqual(m.current_price().unit_price, Decimal("1100.00"))
+
+    def test_add_errors(self):
+        wb, ws = self._sheet()
+        r = self._blank_row(ws)
+        self._set_row(ws, r, 動作="新增", 編號="PTH-09", 中文名稱="x", 類別="板", 計價單位="張", 每單位涵蓋量=1)
+        self._set_row(ws, r + 1, 編號="NEW-1", 新單價=10)                       # 沒有填「新增」
+        self._set_row(ws, r + 2, 動作="新增", 編號="NEW-2", 中文名稱="y", 類別="水泥", 計價單位="包", 每單位涵蓋量=1)
+        self._set_row(ws, r + 3, 動作="新增", 編號="NEW-3", 類別="板", 計價單位="張", 每單位涵蓋量=1)   # 沒有名稱
+        result = self._upload(wb).context["result"]
+        self.assertEqual(result.new, [])
+        self.assertEqual([row for row, _ in result.errors], [r, r + 1, r + 2, r + 3])
+        self.assertIn("已存在", result.errors[0][1])
+        self.assertIn("新增", result.errors[1][1])
+
+    def test_change_material_details(self):
+        wb, ws = self._sheet()
+        r = self._rows(ws)["AG-50x50x1.0"]
+        self._set_row(ws, r, 動作="更新", 中文名稱="鍍鋅角鐵", 英文規格="50x50x1.0mm", 每單位涵蓋量=3)
+        result = self._upload(wb).context["result"]
+        self.assertEqual(len(result.changes), 1)
+        change = result.changes[0]
+        self.assertTrue(change.coverage_changed)
+        self.assertEqual(set(change.values), {"name", "spec_en", "coverage"})
+        self.client.post(reverse("price_import_confirm"))
+        m = Material.objects.get(code="AG-50x50x1.0")
+        self.assertEqual((m.name, m.spec_en, m.coverage), ("鍍鋅角鐵", "50x50x1.0mm", Decimal("3.0000")))
+        self.assertEqual(m.prices.count(), 1)                                 # 價錢沒有改動
+
+    def test_deactivate_unused_material_only(self):
+        wb, ws = self._sheet()
+        rows = self._rows(ws)
+        self._set_row(ws, rows["PTH-25"], 動作="停用")                          # 沒有系統使用
+        self._set_row(ws, rows["PTH-09"], 動作="停用")                          # 2hr 系統使用中
+        result = self._upload(wb).context["result"]
+        self.assertEqual([d.code for d in result.deactivate], ["PTH-25"])
+        self.assertEqual([row for row, _ in result.errors], [rows["PTH-09"]])
+        self.client.post(reverse("price_import_confirm"))
+        self.assertFalse(Material.objects.get(code="PTH-25").active)
+        self.assertTrue(Material.objects.get(code="PTH-09").active)
+        self.assertNotIn("PTH-25", self._rows(self._sheet()[1]))               # 範本不再列出
+        self.assertTrue(Material.objects.get(code="PTH-25").prices.exists())   # 紀錄保留
+
+    def test_price_only_user_cannot_change_materials(self):
+        from django.contrib.auth.models import Permission
+        user = User.objects.create_user("price_only", password="pw-12345-x")
+        user.user_permissions.add(*Permission.objects.filter(
+            content_type__app_label="estimator", codename__in=["view_materialprice", "add_materialprice"]))
+        wb, ws = self._sheet(user)
+        rows = self._rows(ws)
+        self._set_row(ws, rows["AG-50x50x1.0"], 中文名稱="改名")
+        self._set_row(ws, rows["PTH-25"], 動作="停用")
+        self._set_row(ws, rows["PTH-09"], 新單價=380)
+        r = self._blank_row(ws)
+        self._set_row(ws, r, 動作="新增", 編號="NEW-9", 中文名稱="x", 類別="板", 計價單位="張", 每單位涵蓋量=1)
+        result = self._upload(wb).context["result"]
+        self.assertEqual((result.new, result.changes, result.deactivate), ([], [], []))
+        self.assertEqual([p.code for p in result.valid], ["PTH-09"])
+        self.assertEqual(len(result.errors), 3)
 
 
 @override_settings(FB_DEFAULT_LANGUAGE="zh-hant")   # 這組測試檢查中文文字
@@ -536,9 +677,13 @@ class LanguageTests(TestCase):
         self.client.login(username="lang_mgr", password=self.pw)          # 未設定 → 英文
         wb = load_workbook(BytesIO(self.client.get(reverse("price_import_template")).content))
         ws = wb.active
-        self.assertEqual(ws.cell(1, 6).value, "New price")
-        codes = {ws.cell(r, 1).value: r for r in range(2, ws.max_row + 1)}
-        ws.cell(codes["PTH-09"], 6).value = 380
+        C = importer.COL
+        self.assertEqual(ws.cell(1, C["新單價"]).value, "New price")
+        self.assertEqual(ws.cell(1, C["中文名稱"]).value, "Chinese name")
+        codes = {ws.cell(r, C["編號"]).value: r for r in range(2, ws.max_row + 1)}
+        self.assertEqual(ws.cell(codes["PTH-09"], C["計價單位"]).value, "sheet")       # 計價單位用英文
+        self.assertEqual(ws.cell(codes["AG-50x50x1.0"], C["計價單位"]).value, "pc")
+        ws.cell(codes["PTH-09"], C["新單價"]).value = 380
         out = BytesIO()
         wb.save(out)
         self._set("zh-hant")                                               # 換繁體才上載
@@ -547,6 +692,8 @@ class LanguageTests(TestCase):
             "default_date": date.today().isoformat(),
         })
         self.assertContains(resp, "可更新 1 項")
+        result = resp.context["result"]
+        self.assertEqual((result.errors, result.changes), ([], []))         # 英文單位（pc 等）當作沒有改動
 
     def test_admin_switcher_and_default_language_field(self):
         admin_user = User.objects.create_superuser("lang_admin", password=self.pw)

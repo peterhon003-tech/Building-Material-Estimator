@@ -8,15 +8,17 @@ from .i18n import EN_CODE, LANGUAGES, localized, tl, tr
 
 
 class Material(models.Model):
-    CATEGORY_CHOICES = [
-        ("BOARD", tl("板")),
-        ("CHANNEL", tl("槽鐵")),
-        ("ANGLE", tl("角鐵")),
-        ("ROCKWOOL", tl("岩棉")),
-        ("FIXING", tl("螺絲及螺栓")),
-        ("SEALANT", tl("膠")),
-        ("LABOUR", tl("人工")),
+    # (代碼, 中文名稱)；中文名稱同時是翻譯的 key（Excel 匯入時辨認任何語言的類別）
+    CATEGORIES = [
+        ("BOARD", "板"),
+        ("CHANNEL", "槽鐵"),
+        ("ANGLE", "角鐵"),
+        ("ROCKWOOL", "岩棉"),
+        ("FIXING", "螺絲及螺栓"),
+        ("SEALANT", "膠"),
+        ("LABOUR", "人工"),
     ]
+    CATEGORY_CHOICES = [(code, tl(zh)) for code, zh in CATEGORIES]
 
     code = models.CharField(tl("編號"), max_length=40, unique=True)
     name = models.CharField(tl("名稱"), max_length=100)
