@@ -5,7 +5,7 @@
   現時單價 | 現時生效日期 | 新單價 | 供應商 | 生效日期 | 備註
 
 - 動作留空或「更新」：更新價錢（「新單價」有填時）及修改材料資料（和現時資料不同時）
-- 動作「新增」：新增材料（編號不可已存在），可同時填第一個價錢
+- 編號在系統找不到（或動作「新增」）：新增材料，可同時填第一個價錢；編號和現有編號只差符號、大小寫或 O/0 時預覽會提示
 - 動作「停用」：停用材料（不刪除，紀錄保留）；仍在使用中的系統配方用到的不可以停用
 - 「現時單價」「現時生效日期」只供參考，上載時不會讀取
 - 舊範本（只有 編號 | 名稱 | 規格 | 單位 | 現時單價 | 新單價 …）仍可上載，但只會更新價錢
@@ -86,6 +86,7 @@ class NewMaterial:
     code: str
     fields: dict                # name, spec, name_en, spec_en, category, unit, unit_en, coverage
     category_label: str = ""    # 預覽顯示用
+    warning: str = ""           # 例如編號和現有編號相似（可能打錯）
 
     @property
     def label(self):
@@ -227,7 +228,7 @@ def build_template(materials, t=_no_translate, categories=None, actions=None):
                                   showErrorMessage=True, showInputMessage=True, prompt=prompt[:255],
                                   error=t("請從清單選擇")), h)
 
-    list_dv(actions or [], "動作", t("「更新」或留空 = 更新價錢 / 資料；「新增」= 新材料；「停用」= 停用材料"))
+    list_dv(actions or [], "動作", t("留空或「更新」= 更新（新編號會自動新增）；「新增」= 新材料；「停用」= 停用材料"))
     list_dv(categories or [], "類別", t("請從清單選擇"))
     ws.freeze_panes = ws.cell(2, COL["中文名稱"])
 
@@ -241,7 +242,7 @@ def build_template(materials, t=_no_translate, categories=None, actions=None):
         "4. 不要修改「編號」欄，系統用它配對材料。",
         "5. 上載後會先顯示預覽，確認後才會儲存。舊價錢會保留在紀錄中。",
         "6. 修改材料資料：直接修改藍色欄（中文名稱、規格、英文名稱、類別、中文 / 英文計價單位、每單位涵蓋量）。修改「每單位涵蓋量」會影響所有用到這材料的系統計算。",
-        "7. 新增材料：在最後的空白行，「動作」填「新增」，再填編號、中文名稱、類別、中文計價單位、每單位涵蓋量（英文計價單位建議一併填寫）；可同時填新單價。",
+        "7. 新增材料：在最後的空白行填上新的編號、中文名稱、類別、中文計價單位、每單位涵蓋量（英文計價單位建議一併填寫），可同時填新單價。系統找不到的編號會當作新材料（「動作」可留空）；預覽頁會列出所有新材料，和現有編號相似的會提示。",
         "8. 停用材料：「動作」填「停用」。停用不會刪除紀錄，可在系統管理重新啟用；仍在系統配方中使用的材料不可以停用。",
         "9. 中文計價單位填中文（例如 張、支、件、粒），英文計價單位填英文（例如 sheet、pc、nos）。中文介面顯示中文單位，英文介面顯示英文單位；英文計價單位留空會按系統翻譯顯示。",
         "10. 現有材料的中文名稱、類別、中文計價單位、每單位涵蓋量留空 = 不改動；新增材料時這幾欄必須填寫。",
@@ -303,6 +304,12 @@ def _date(v, t=_no_translate):
         return date.fromisoformat(s)
     except ValueError:
         raise ValueError(t("生效日期「{v}」格式不正確，請用 YYYY-MM-DD", v=_text(v))) from None
+
+
+def _loose(code):
+    """寬鬆比較用的編號：只留英文字母和數字，O 當 0、I / L 當 1（例如 PTH-O9、pth 09 都當作 PTH09）。"""
+    out = "".join(ch for ch in code.upper() if ch.isalnum())
+    return out.replace("O", "0").replace("I", "1").replace("L", "1")
 
 
 def _fmt(key, value, category_names):
@@ -391,6 +398,7 @@ def parse_workbook(file, materials, default_supplier, default_date, t=_no_transl
 
     # 編號不分大小寫配對（現有編號例如 AG-50x50x1.0 有小寫 x）；新增的編號一律轉為大寫
     canonical = {c.upper(): c for c in materials}
+    loose_codes = {_loose(c): c for c in materials}             # 檢查可能打錯的新編號
     seen = {}
     for n, values in enumerate(rows, start=2):
         if n > MAX_ROWS + 1:
@@ -417,21 +425,31 @@ def parse_workbook(file, materials, default_supplier, default_date, t=_no_transl
         info = materials.get(code)
 
         try:
-            # ---- 新增材料 ----
-            if action == ACTION_ADD:
+            # ---- 新增材料：選了「新增」，或編號在系統找不到（動作留空 / 更新） ----
+            implicit_add = action == "" and info is None
+            if action == ACTION_ADD or implicit_add:
                 if not can_add:
-                    raise ValueError(t("你沒有新增材料的權限"))
+                    raise ValueError(t("找不到材料編號「{code}」，你沒有新增材料的權限", code=code)
+                                     if implicit_add else t("你沒有新增材料的權限"))
                 if info is not None:
                     raise ValueError(t("編號「{code}」已存在（已停用，可在系統管理重新啟用）", code=code)
                                      if not info.active else t("編號「{code}」已存在，不可以新增", code=code))
                 if len(code) > 40:
                     raise ValueError(t("編號太長（上限 40 字）"))
                 if len(detail_cols) < len(DETAIL_FIELDS):
-                    raise ValueError(t("舊範本不可以新增材料，請重新下載範本"))
-                fields = read_details(values, None)       # 新材料：沒有現時資料可比對
+                    raise ValueError(t("找不到材料編號「{code}」。舊範本不可以新增材料，請重新下載範本", code=code)
+                                     if implicit_add else t("舊範本不可以新增材料，請重新下載範本"))
+                try:
+                    fields = read_details(values, None)   # 新材料：沒有現時資料可比對
+                except ValueError as e:
+                    if implicit_add:                      # 說明這一行被當作新材料
+                        raise ValueError(t("新材料「{code}」：{msg}", code=code, msg=str(e))) from None
+                    raise
                 price = _price(raw_price, t)
                 seen[code] = n
-                result.new.append(NewMaterial(row=n, code=code, fields=fields,
+                similar = loose_codes.get(_loose(code))
+                warning = t("編號和現有的「{other}」相似，請確認不是打錯", other=similar) if similar else ""
+                result.new.append(NewMaterial(row=n, code=code, fields=fields, warning=warning,
                                               category_label=category_names.get(fields["category"], fields["category"])))
                 if price is not None:
                     result.valid.append(ImportRow(
@@ -441,10 +459,10 @@ def parse_workbook(file, materials, default_supplier, default_date, t=_no_transl
                         note=_text(cell(values, "備註"))))
                 continue
 
-            if info is None or not info.active:
-                if info is not None:
-                    raise ValueError(t("材料「{code}」已停用，請先在系統管理重新啟用", code=code))
-                raise ValueError(t("找不到材料編號「{code}」（如要新增，請在「動作」欄填「新增」）", code=code))
+            if info is None:                              # 只有「停用」一個找不到的編號會到這裡
+                raise ValueError(t("找不到材料編號「{code}」", code=code))
+            if not info.active:
+                raise ValueError(t("材料「{code}」已停用，請先在系統管理重新啟用", code=code))
 
             # ---- 停用材料 ----
             if action == ACTION_DEACTIVATE:

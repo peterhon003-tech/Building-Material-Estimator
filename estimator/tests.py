@@ -326,7 +326,26 @@ class AdminAndImportTests(TestCase):
         self.assertEqual(result.new, [])
         self.assertEqual([row for row, _ in result.errors], [r, r + 1, r + 2, r + 3])
         self.assertIn("已存在", result.errors[0][1])
-        self.assertIn("新增", result.errors[1][1])
+        self.assertIn("新材料「NEW-1」", result.errors[1][1])                 # 找不到的編號當作新材料，但缺資料
+
+    def test_unknown_code_is_added_without_action(self):
+        wb, ws = self._sheet()
+        r = self._blank_row(ws)
+        self._set_row(ws, r, 編號="rw-r140-50", 中文名稱="TANDA R140 岩棉", 中文規格="50mm 140kg/m³",
+                      類別="岩棉", 中文計價單位="件", 英文計價單位="pc", 每單位涵蓋量=0.72, 新單價=45)
+        self._set_row(ws, r + 1, 動作="更新", 編號="PTH-O9", 中文名稱="Promatect-H", 類別="板",
+                      中文計價單位="張", 每單位涵蓋量=2.9768)                        # 可能打錯（O 和 0）
+        result = self._upload(wb).context["result"]
+        self.assertEqual(result.errors, [])
+        self.assertEqual([n.code for n in result.new], ["RW-R140-50", "PTH-O9"])
+        self.assertEqual(result.new[0].warning, "")
+        self.assertIn("PTH-09", result.new[1].warning)                       # 和現有編號相似：提示
+        self.assertEqual([p.code for p in result.valid], ["RW-R140-50"])
+        self.client.post(reverse("price_import_confirm"))
+        m = Material.objects.get(code="RW-R140-50")
+        self.assertEqual((m.category, m.unit, m.unit_en, m.coverage), ("ROCKWOOL", "件", "pc", Decimal("0.7200")))
+        self.assertEqual(m.current_price().unit_price, Decimal("45.00"))
+        self.assertTrue(Material.objects.filter(code="PTH-O9").exists())    # 提示但仍可儲存
 
     def test_change_material_details(self):
         wb, ws = self._sheet()

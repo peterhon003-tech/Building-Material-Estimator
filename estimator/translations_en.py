@@ -455,4 +455,11 @@ EN = {
     '7. 新增材料：在最後的空白行，「動作」填「新增」，再填編號、中文名稱、類別、中文計價單位、每單位涵蓋量（英文計價單位建議一併填寫）；可同時填新單價。': '7. To add a material, use a blank row at the end: set Action to "Add", then fill in Code, Chinese name, Category, Chinese pricing unit and Coverage per unit (filling in the English pricing unit is recommended). You can also enter a New price.',
     '9. 中文計價單位填中文（例如 張、支、件、粒），英文計價單位填英文（例如 sheet、pc、nos）。中文介面顯示中文單位，英文介面顯示英文單位；英文計價單位留空會按系統翻譯顯示。': '9. Enter the Chinese pricing unit in Chinese (e.g. 張, 支, 件, 粒) and the English pricing unit in English (e.g. sheet, pc, nos). The Chinese interface shows the Chinese unit and the English interface shows the English unit; if the English pricing unit is blank, the system translation is shown.',
     '10. 現有材料的中文名稱、類別、中文計價單位、每單位涵蓋量留空 = 不改動；新增材料時這幾欄必須填寫。': '10. For existing materials, a blank Chinese name, Category, Chinese pricing unit or Coverage per unit means no change. These columns are required when adding a material.',
+    '找不到材料編號「{code}」，你沒有新增材料的權限': 'Material code "{code}" not found, and you do not have permission to add materials',
+    '找不到材料編號「{code}」。舊範本不可以新增材料，請重新下載範本': 'Material code "{code}" not found. Materials cannot be added with an old template; please download the template again.',
+    '新材料「{code}」：{msg}': 'New material "{code}": {msg}',
+    '編號和現有的「{other}」相似，請確認不是打錯': 'This code is similar to the existing "{other}". Please check it is not a typo',
+    '7. 新增材料：在最後的空白行填上新的編號、中文名稱、類別、中文計價單位、每單位涵蓋量（英文計價單位建議一併填寫），可同時填新單價。系統找不到的編號會當作新材料（「動作」可留空）；預覽頁會列出所有新材料，和現有編號相似的會提示。': '7. To add a material, fill in a new Code, Chinese name, Category, Chinese pricing unit and Coverage per unit in a blank row at the end (filling in the English pricing unit is recommended); you can also enter a New price. Codes not found in the system are treated as new materials (Action can be left blank). The preview lists all new materials and warns about codes similar to existing ones.',
+    '留空或「更新」= 更新（新編號會自動新增）；「新增」= 新材料；「停用」= 停用材料': 'Blank or "Update" = update (new codes are added automatically); "Add" = new material; "Deactivate" = deactivate material',
+    '需要時修改藍色欄的材料資料；填上系統沒有的編號會新增材料；「動作」欄選「停用」可停用材料': 'Edit material details in the blue columns if needed; a code not in the system adds a new material; set Action to "Deactivate" to deactivate a material',
 }

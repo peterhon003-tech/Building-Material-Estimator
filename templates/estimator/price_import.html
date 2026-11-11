@@ -11,7 +11,7 @@
   <ol style="margin:0; padding-left:20px">
     <li><a href="{% url 'price_import_template' %}">{% t "下載範本" %}</a>{% t "（已列出所有材料和現時價錢）" %}</li>
     <li>{% t "在黃色欄填寫「新單價」，需要時填供應商、生效日期、備註" %}</li>
-    <li>{% t "需要時修改藍色欄的材料資料；「動作」欄填「新增」可加入新材料，填「停用」可停用材料" %}</li>
+    <li>{% t "需要時修改藍色欄的材料資料；填上系統沒有的編號會新增材料；「動作」欄選「停用」可停用材料" %}</li>
     <li>{% t "在下面上載，先看預覽，確認後才會儲存" %}</li>
   </ol>
 </div>
@@ -52,7 +52,7 @@
     <thead><tr><th>{% t "行" %}</th><th>{% t "編號" %}</th><th>{% t "中文名稱" %}</th><th>{% t "中文規格" %}</th><th>{% t "英文名稱" %}</th><th>{% t "類別" %}</th><th>{% t "中文計價單位" %}</th><th>{% t "英文計價單位" %}</th><th class="num">{% t "每單位涵蓋量" %}</th></tr></thead>
     <tbody>
       {% for r in result.new %}
-      <tr><td>{{ r.row }}</td><td>{{ r.code }}</td><td>{{ r.fields.name }}</td><td>{{ r.fields.spec }}</td><td>{{ r.fields.name_en }}</td><td>{{ r.category_label }}</td><td>{{ r.fields.unit }}</td><td>{{ r.fields.unit_en }}</td><td class="num">{{ r.fields.coverage|floatformat:"-4" }}</td></tr>
+      <tr><td>{{ r.row }}</td><td>{{ r.code }}</td><td>{{ r.fields.name }}</td><td>{{ r.fields.spec }}</td><td>{{ r.fields.name_en }}</td><td>{{ r.category_label }}</td><td>{{ r.fields.unit }}</td><td>{{ r.fields.unit_en }}</td><td class="num">{{ r.fields.coverage|floatformat:"-4" }}{% if r.warning %}<br><span style="color:#9a6700">⚠ {{ r.warning }}</span>{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
