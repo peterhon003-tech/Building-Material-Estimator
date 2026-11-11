@@ -1010,3 +1010,15 @@ class SystemTypeTests(TestCase):
         self.assertEqual(two.components.get(item_no=3).fixed_qty_per_sqm, Decimal("0.8605"))
         self.assertEqual(four.components.get(item_no=3).fixed_qty_per_sqm, Decimal("0.5"))   # 沒有覆蓋
         self.assertTrue(ch.note_en.startswith("Ceiling: 1.0815"))
+
+
+class NoRoundUnitTests(TestCase):
+    """面積、長度、重量的單位不進位，例如人工的「平方米」。"""
+
+    def test_area_units_not_rounded(self):
+        for unit in ("m²", "m2", "sqm", "平方米"):
+            self.assertEqual(calc.order_qty(Decimal("100.5"), unit), Decimal("100.5"), unit)
+
+    def test_count_units_rounded_up(self):
+        for unit in ("張", "支", "件", "粒", "pc"):
+            self.assertEqual(calc.order_qty(Decimal("100.5"), unit), Decimal("101"), unit)

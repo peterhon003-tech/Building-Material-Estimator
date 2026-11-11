@@ -59,7 +59,8 @@ def line_cost(qty, unit_price):
 
 
 # 這些單位可以按實際數量計，不用進位成整數（例如人工按 m²）
-NO_ROUND_UNITS = {"m²", "m", "kg", "公斤", "米"}
+# 這些單位的訂購數量不進位（面積、長度、重量）；其他單位（張、支、件、粒）向上進位至整數
+NO_ROUND_UNITS = {"m²", "m2", "sqm", "平方米", "m", "米", "kg", "公斤"}
 
 
 def total_qty(qty_per_sqm, area):
