@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "Excel 匯入紀錄" %} · {{ batch.filename }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'import_batches' %}">{% t "← 返回 Excel 匯入紀錄" %}</a></p>
+<h1>{% t "Excel 匯入紀錄" %}</h1>
+<div class="card">
+  <table class="q-info">
+    <tr><th style="width:180px">{% t "檔案名稱" %}</th><td>{{ batch.filename|default:"—" }}
+      {% if has_file %} · <a id="download-file" href="{% url 'import_batch_file' batch.pk %}">{% t "下載原檔" %}</a>{% endif %}</td></tr>
+    <tr><th>{% t "帳戶" %}</th><td>{{ batch.username|default:"—" }}</td></tr>
+    <tr><th>{% t "上載時間" %}</th><td>{{ batch.created_at|date:"Y-m-d H:i" }}</td></tr>
+    <tr><th>{% t "確認時間" %}</th><td>{{ batch.confirmed_at|date:"Y-m-d H:i" }}</td></tr>
+    <tr><th>{% t "預設供應商" %}</th><td>{{ batch.default_supplier|default:"—" }}</td></tr>
+    <tr><th>{% t "預設生效日期" %}</th><td>{{ batch.default_date|date:"Y-m-d"|default:"—" }}</td></tr>
+    <tr><th>{% t "數量" %}</th><td>{% t "新增材料 {a} 項 · 修改材料資料 {b} 項 · 停用材料 {c} 項" a=batch.counts.new|default:0 b=batch.counts.changes|default:0 c=batch.counts.deactivate|default:0 %} · {% t "價錢 {n} 項" n=batch.counts.prices|default:0 %}</td></tr>
+  </table>
+</div>
+<h2>{% t "改動明細" %}</h2>
+{% include "estimator/_log_table.html" with logs=logs show_code=True %}
+{% endblock %}

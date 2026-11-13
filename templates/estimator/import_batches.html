@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "Excel 匯入紀錄" %} · {% t "防火板計價系統" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'material_logs' %}">{% t "← 返回材料修改紀錄" %}</a></p>
+<h1>{% t "Excel 匯入紀錄" %}</h1>
+<p class="muted">{% t "每次按「確認儲存」的 Excel 批量更新。可以查看改動明細和下載當時上載的原檔。" %}</p>
+<table id="batch-table">
+  <thead>
+    <tr><th>{% t "確認時間" %}</th><th>{% t "帳戶" %}</th><th>{% t "檔案名稱" %}</th>
+      <th class="num">{% t "新增" %}</th><th class="num">{% t "修改" %}</th><th class="num">{% t "停用" %}</th><th class="num">{% t "價錢" %}</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for b in page %}
+    <tr>
+      <td style="white-space:nowrap">{{ b.confirmed_at|date:"Y-m-d H:i" }}</td>
+      <td>{{ b.username|default:"—" }}</td>
+      <td>{{ b.filename|default:"—" }}</td>
+      <td class="num">{{ b.counts.new|default:0 }}</td>
+      <td class="num">{{ b.counts.changes|default:0 }}</td>
+      <td class="num">{{ b.counts.deactivate|default:0 }}</td>
+      <td class="num">{{ b.counts.prices|default:0 }}</td>
+      <td><a href="{% url 'import_batch_detail' b.pk %}">{% t "明細" %}</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="8" class="muted">{% t "未有紀錄" %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if page.has_other_pages %}
+<p style="margin-top:12px">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">← {% t "上一頁" %}</a>{% endif %}
+  <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}">{% t "下一頁" %} →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

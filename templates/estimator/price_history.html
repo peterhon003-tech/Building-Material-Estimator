@@ -27,4 +27,8 @@
     {% endfor %}
   </tbody>
 </table>
+
+<h2 id="material-log">{% t "材料修改紀錄" %}</h2>
+<p class="muted">{% t "這個材料的所有改動（新增、修改、停用、價錢），最新的在最上面。" %}</p>
+{% include "estimator/_log_table.html" with logs=logs show_code=False %}
 {% endblock %}

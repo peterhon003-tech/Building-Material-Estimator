@@ -5,6 +5,7 @@
 <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
   <h1 style="margin:0">{% t "原料價錢" %}</h1>
   <div style="display:flex; gap:8px">
+    <a class="btn secondary" href="{% url 'material_logs' %}">{% t "材料修改紀錄" %}</a>
     {% if can_edit %}<a class="btn secondary" href="{% url 'price_import' %}">{% t "Excel 批量更新" %}</a>{% endif %}
     {% if can_add_material %}<a class="btn" href="{% url 'material_add' %}">{% t "新增材料" %}</a>{% endif %}
   </div>

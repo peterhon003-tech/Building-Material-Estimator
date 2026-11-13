@@ -1,0 +1,29 @@
+{% load fb %}
+<table class="log-table">
+  <thead>
+    <tr><th>{% t "時間" %}</th>{% if show_code %}<th>{% t "編號" %}</th>{% endif %}<th>{% t "動作" %}</th><th>{% t "來源" %}</th><th>{% t "帳戶" %}</th><th>{% t "改動" %}</th></tr>
+  </thead>
+  <tbody>
+    {% for e in logs %}
+    <tr>
+      <td style="white-space:nowrap">{{ e.created_at|date:"Y-m-d H:i" }}</td>
+      {% if show_code %}<td style="white-space:nowrap">{% if e.material_id %}<a href="{% url 'price_history' e.material_id %}">{{ e.code }}</a>{% else %}{{ e.code }}{% endif %}</td>{% endif %}
+      <td><span class="tag log-{{ e.action }}">{{ e.get_action_display }}</span></td>
+      <td style="white-space:nowrap">{{ e.get_source_display }}{% if e.batch_id and e.batch.status == "confirmed" %}<br><a href="{% url 'import_batch_detail' e.batch_id %}" style="font-size:12px">{% t "查看這次匯入" %}</a>{% endif %}</td>
+      <td>{{ e.username|default:"—" }}</td>
+      <td>
+        {% for label, old, new in e.rows %}{% if e.action == "created" %}{{ label }}：<strong>{{ new }}</strong>{% else %}{{ label }}：{{ old }} → <strong>{{ new }}</strong>{% endif %}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+        {% if e.note %}<br><span class="muted">{{ e.note }}</span>{% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="muted">{% t "未有紀錄" %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<style>
+  .log-created { background:#dafbe1; border-color:#4ac26b; }
+  .log-changed { background:#ddf4ff; border-color:#54aeff; }
+  .log-deactivated, .log-deleted { background:#ffebe9; border-color:#ff8182; }
+  .log-reactivated { background:#fff8c5; border-color:#d4a72c; }
+</style>

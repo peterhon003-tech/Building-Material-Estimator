@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load fb %}
+{% block title %}{% t "材料修改紀錄" %} · {% t "防火板計價系統" %}{% endblock %}
+{% block content %}
+<p><a href="{% url 'price_list' %}">{% t "← 返回原料價錢" %}</a></p>
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
+  <h1 style="margin:0">{% t "材料修改紀錄" %}</h1>
+  <a class="btn secondary" href="{% url 'import_batches' %}">{% t "Excel 匯入紀錄" %}</a>
+</div>
+<p class="muted">{% t "所有材料的新增、修改、停用和價錢改動，包括 Excel 匯入、系統管理、新增材料頁和更新價錢頁。" %}</p>
+
+<form method="get" class="card row" style="padding:10px 16px">
+  <label>{% t "編號" %}<input type="search" name="q" value="{{ f.q }}"></label>
+  <label>{% t "動作" %}
+    <select name="action"><option value="">{% t "全部" %}</option>
+      {% for v, label in action_choices %}<option value="{{ v }}" {% if f.action == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label>{% t "來源" %}
+    <select name="source"><option value="">{% t "全部" %}</option>
+      {% for v, label in source_choices %}<option value="{{ v }}" {% if f.source == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label>{% t "帳戶" %}<input type="search" name="user" value="{{ f.user }}"></label>
+  <button class="btn secondary" type="submit">{% t "篩選" %}</button>
+</form>
+
+{% include "estimator/_log_table.html" with logs=page.object_list show_code=True %}
+
+{% if page.has_other_pages %}
+<p style="margin-top:12px">
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&{{ query }}">← {% t "上一頁" %}</a>{% endif %}
+  <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}&{{ query }}">{% t "下一頁" %} →</a>{% endif %}
+</p>
+{% endif %}
+{% endblock %}

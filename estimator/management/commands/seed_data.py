@@ -8,7 +8,8 @@ from django.contrib.auth.models import Group, Permission
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from estimator.models import FireSystem, Material, MaterialPrice, SystemComponent
+from estimator.audit import log_created
+from estimator.models import FireSystem, Material, MaterialLog, MaterialPrice, SystemComponent
 from estimator.seed import COMPONENTS_EN, DRAWING, MATERIALS, MATERIALS_EN, NOTES_EN, SYSTEMS, UNITS_EN
 
 ESTIMATOR_GROUP = "估價員"
@@ -35,6 +36,8 @@ class Command(BaseCommand):
                           "coverage": Decimal(coverage)},
             )
             new_m += created
+            if created:
+                log_created(m, None, MaterialLog.SYSTEM, note="seed_data")
             materials[code] = m
             if source and price and not m.prices.exists():
                 supplier, eff, note = source

@@ -8,7 +8,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
-from .models import FireSystem, Material, MaterialPrice, SystemComponent, UserProfile
+from . import audit
+from .models import FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, SystemComponent, UserProfile
 
 PRICE_FIELDS = ["unit_price", "supplier", "effective_date", "note", "updated_by", "created_at"]
 
@@ -34,6 +35,63 @@ class MaterialAdmin(admin.ModelAdmin):
     list_filter = ["category", "active"]
     search_fields = ["code", "name", "spec", "name_en"]
     inlines = [MaterialPriceInline]
+
+    # 材料修改紀錄：記錄在系統管理的新增、修改、刪除（改之前 → 改之後）
+    def save_model(self, request, obj, form, change):
+        before = audit.snapshot(Material.objects.get(pk=obj.pk)) if change and obj.pk else None
+        super().save_model(request, obj, form, change)
+        if before is None:
+            audit.log_created(obj, request.user, MaterialLog.ADMIN)
+        else:
+            audit.log_changed(obj, before, request.user, MaterialLog.ADMIN)
+
+    def delete_model(self, request, obj):
+        audit.log(obj, request.user, MaterialLog.ADMIN, MaterialLog.DELETED)
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            audit.log(obj, request.user, MaterialLog.ADMIN, MaterialLog.DELETED)
+        super().delete_queryset(request, queryset)
+
+
+@admin.register(MaterialLog)
+class MaterialLogAdmin(admin.ModelAdmin):
+    """唯讀：材料修改紀錄。"""
+    list_display = ["created_at", "code", "action", "source", "username", "batch"]
+    list_filter = ["source", "action"]
+    search_fields = ["code", "username"]
+    date_hierarchy = "created_at"
+    readonly_fields = ["created_at", "material", "code", "user", "username", "source", "action", "changes",
+                       "batch", "note"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ImportBatch)
+class ImportBatchAdmin(admin.ModelAdmin):
+    """唯讀：Excel 匯入紀錄（原檔可在網站「原料價錢 → 匯入紀錄」下載）。"""
+    list_display = ["created_at", "username", "filename", "status", "confirmed_at"]
+    list_filter = ["status"]
+    exclude = ["file_data"]
+    readonly_fields = ["created_at", "confirmed_at", "user", "username", "status", "filename", "file_size",
+                       "default_supplier", "default_date", "counts"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(MaterialPrice)

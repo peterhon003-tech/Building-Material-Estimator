@@ -186,3 +186,71 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.get_language_display()}"
+
+
+class ImportBatch(models.Model):
+    """一次 Excel 批量更新：誰、甚麼時候、哪個檔案（保存原檔）、改了多少。
+
+    上載後先建立「預覽」狀態，按「確認儲存」才變成「已確認」；未確認的預覽一日後自動清除。
+    """
+    PREVIEW, CONFIRMED = "preview", "confirmed"
+    STATUS_CHOICES = [(PREVIEW, tl("預覽")), (CONFIRMED, tl("已確認"))]
+
+    created_at = models.DateTimeField(tl("上載時間"), auto_now_add=True)
+    confirmed_at = models.DateTimeField(tl("確認時間"), null=True, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name="+", verbose_name=tl("帳戶"))
+    username = models.CharField(tl("帳戶名稱"), max_length=150, blank=True)
+    status = models.CharField(tl("狀態"), max_length=10, choices=STATUS_CHOICES, default=PREVIEW)
+    filename = models.CharField(tl("檔案名稱"), max_length=255, blank=True)
+    file_data = models.BinaryField(tl("原檔"), null=True, blank=True)
+    file_size = models.PositiveIntegerField(tl("檔案大小"), default=0)
+    default_supplier = models.CharField(tl("預設供應商"), max_length=100, blank=True)
+    default_date = models.DateField(tl("預設生效日期"), null=True, blank=True)
+    counts = models.JSONField(tl("數量"), default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = tl("Excel 匯入紀錄")
+        verbose_name_plural = tl("Excel 匯入紀錄")
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} · {self.username} · {self.filename}"
+
+
+class MaterialLog(models.Model):
+    """材料修改紀錄：無論從哪裡改，都記錄帳戶、時間、來源、改之前 → 改之後。"""
+    EXCEL, ADMIN, FORM, PRICE_FORM, SYSTEM = "excel", "admin", "form", "price_form", "system"
+    SOURCE_CHOICES = [
+        (EXCEL, tl("Excel 匯入")), (ADMIN, tl("系統管理")), (FORM, tl("新增材料頁")),
+        (PRICE_FORM, tl("更新價錢頁")), (SYSTEM, tl("系統建立")),
+    ]
+    CREATED, CHANGED, DEACTIVATED, REACTIVATED, PRICE, DELETED = (
+        "created", "changed", "deactivated", "reactivated", "price", "deleted")
+    ACTION_CHOICES = [
+        (CREATED, tl("新增")), (CHANGED, tl("修改")), (DEACTIVATED, tl("停用")),
+        (REACTIVATED, tl("重新啟用")), (PRICE, tl("價錢")), (DELETED, tl("刪除")),
+    ]
+
+    created_at = models.DateTimeField(tl("時間"), auto_now_add=True, db_index=True)
+    material = models.ForeignKey(Material, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name="logs", verbose_name=tl("材料"))
+    code = models.CharField(tl("編號"), max_length=40)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name="+", verbose_name=tl("帳戶"))
+    username = models.CharField(tl("帳戶名稱"), max_length=150, blank=True)
+    source = models.CharField(tl("來源"), max_length=12, choices=SOURCE_CHOICES)
+    action = models.CharField(tl("動作"), max_length=12, choices=ACTION_CHOICES)
+    changes = models.JSONField(tl("改動"), default=list, blank=True)   # [{"field", "old", "new"}]
+    batch = models.ForeignKey(ImportBatch, on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name="logs", verbose_name=tl("Excel 匯入紀錄"))
+    note = models.CharField(tl("備註"), max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = tl("材料修改紀錄")
+        verbose_name_plural = tl("材料修改紀錄")
+        indexes = [models.Index(fields=["material", "-created_at"], name="materiallog_material_time")]
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} · {self.code} · {self.get_action_display()}"
