@@ -119,3 +119,12 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "calculator"
 LOGOUT_REDIRECT_URL = "login"
+
+
+# 記錄 CSRF 錯誤的原因（顯示在 docker compose logs web）
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {"django.security.csrf": {"handlers": ["console"], "level": "WARNING"}},
+}
