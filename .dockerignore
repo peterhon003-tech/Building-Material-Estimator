@@ -5,3 +5,11 @@ __pycache__/
 db.sqlite3
 staticfiles/
 backups/
+.env.dev
+.venv/
+.vscode/
+*.log
+*.dump
+*.run
+*.sha256
+fireboard_release/
