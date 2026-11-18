@@ -1,0 +1,40 @@
+# 由 pack_fireboard.sh 產生：使用已打包的 Docker image，不需要原始碼和 build。
+name: fireboard
+
+services:
+  db:
+    image: @PG_IMAGE@
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    image: @WEB_IMAGE@
+    pull_policy: never
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    networks:
+      - backend
+
+volumes:
+  pgdata:
+
+networks:
+  backend:
