@@ -495,4 +495,11 @@ EN = {
     '系統建立': 'System',
     '這個材料的所有改動（新增、修改、停用、價錢），最新的在最上面。': 'All changes to this material (added, changed, deactivated, prices), newest first.',
     '重新啟用': 'Reactivated',
+    # ---------- 多重排序 ----------
+    "按欄位標題排序，再按一次反轉；按住 Shift 再按其他標題，可加入第二、第三層排序。":
+        "Click a column heading to sort, click again to reverse; hold Shift and click another heading to add a second or third sort level.",
+    "排序只影響畫面顯示，匯出 Excel 和另存為報價仍按原本次序。":
+        "Sorting only changes the display; Excel export and Save as quotation keep the original order.",
+    "清除排序": "Clear sorting",
+    "按：按這一欄排序（再按反轉）；Shift+按：加入下一層排序": "Click: sort by this column (click again to reverse); Shift+click: add as the next sort level",
 }

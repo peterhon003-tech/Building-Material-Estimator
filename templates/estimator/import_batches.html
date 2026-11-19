@@ -5,10 +5,11 @@
 <p><a href="{% url 'material_logs' %}">{% t "← 返回材料修改紀錄" %}</a></p>
 <h1>{% t "Excel 匯入紀錄" %}</h1>
 <p class="muted">{% t "每次按「確認儲存」的 Excel 批量更新。可以查看改動明細和下載當時上載的原檔。" %}</p>
-<table id="batch-table">
+{% include "includes/sort_hint.html" with table="batch-table" %}
+<table id="batch-table" data-multisort="server" data-sort-id="import_batches" data-sort-current="{{ sort }}">
   <thead>
-    <tr><th>{% t "確認時間" %}</th><th>{% t "帳戶" %}</th><th>{% t "檔案名稱" %}</th>
-      <th class="num">{% t "新增" %}</th><th class="num">{% t "修改" %}</th><th class="num">{% t "停用" %}</th><th class="num">{% t "價錢" %}</th><th></th></tr>
+    <tr><th data-sort="time">{% t "確認時間" %}</th><th data-sort="user">{% t "帳戶" %}</th><th data-sort="file">{% t "檔案名稱" %}</th>
+      <th class="num" data-sort="new">{% t "新增" %}</th><th class="num" data-sort="changes">{% t "修改" %}</th><th class="num" data-sort="deactivate">{% t "停用" %}</th><th class="num" data-sort="prices">{% t "價錢" %}</th><th></th></tr>
   </thead>
   <tbody>
     {% for b in page %}
@@ -29,9 +30,9 @@
 </table>
 {% if page.has_other_pages %}
 <p style="margin-top:12px">
-  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">← {% t "上一頁" %}</a>{% endif %}
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if sort %}&sort={{ sort|urlencode }}{% endif %}">← {% t "上一頁" %}</a>{% endif %}
   <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
-  {% if page.has_next %}<a href="?page={{ page.next_page_number }}">{% t "下一頁" %} →</a>{% endif %}
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if sort %}&sort={{ sort|urlencode }}{% endif %}">{% t "下一頁" %} →</a>{% endif %}
 </p>
 {% endif %}
 {% endblock %}

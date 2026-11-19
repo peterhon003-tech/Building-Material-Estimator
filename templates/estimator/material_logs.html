@@ -23,7 +23,8 @@
   <button class="btn secondary" type="submit">{% t "篩選" %}</button>
 </form>
 
-{% include "estimator/_log_table.html" with logs=page.object_list show_code=True %}
+{% include "includes/sort_hint.html" with table="log-table" %}
+{% include "estimator/_log_table.html" with logs=page.object_list show_code=True sortable=True %}
 
 {% if page.has_other_pages %}
 <p style="margin-top:12px">

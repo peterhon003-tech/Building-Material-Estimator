@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from estimator import services as est_services
+from estimator import sorting
 from estimator.i18n import tr
 from estimator.views import can_see_price, parse_area
 
@@ -72,9 +73,17 @@ def quote_list(request):
     if not show_all_revisions:
         newer = Quotation.objects.filter(number=OuterRef("number"), pk__gt=OuterRef("pk"))
         qs = qs.filter(~Exists(newer))
+    show_price = can_see_price(request.user)
+    fields = {
+        "number": ("number", "revision"), "customer": "customer_name", "project": "project",
+        "items": "item_count", "status": "status", "creator": "created_by__username", "updated": "updated_at",
+    }
+    if show_price:                            # 沒有價錢權限：不可以按合計排序（排序次序會透露價錢高低）
+        fields["total"] = "priced_total"
+    qs, sort = sorting.apply(qs, request, fields, default=["-updated_at", "-pk"])
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     return render(request, "quotes/list.html", {
-        "page": page, "can_see_price": can_see_price(request.user),
+        "page": page, "can_see_price": show_price, "sort": sort,
         "status_choices": Quotation.STATUS_CHOICES, "f": {
             "status": status, "mine": request.GET.get("mine", ""), "q": q,
             "all_revisions": show_all_revisions,

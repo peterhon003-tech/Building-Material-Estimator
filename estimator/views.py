@@ -2,11 +2,14 @@ import json
 from datetime import date, timedelta
 from decimal import Decimal
 from io import BytesIO
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.paginator import Paginator
+from django.db.models import IntegerField
+from django.db.models.fields.json import KT
+from django.db.models.functions import Cast
 from django.db import transaction
 from django.http import Http404, HttpResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
@@ -21,7 +24,7 @@ from .hooks import calculation_done
 from .forms import MaterialForm, PriceForm, PriceImportForm
 from .i18n import LANGUAGE_CODES, all_languages, tr
 from .middleware import SESSION_KEY as LANGUAGE_SESSION_KEY
-from . import audit
+from . import audit, sorting
 from .models import FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, SystemComponent
 
 IMPORT_SESSION_KEY = "price_import_rows"
@@ -227,11 +230,14 @@ def material_logs(request):
         qs = qs.filter(action=f["action"])
     if f["user"]:
         qs = qs.filter(username__icontains=f["user"])
+    qs, sort = sorting.apply(qs, request, {
+        "time": "created_at", "code": "code", "action": "action", "source": "source", "user": "username",
+    }, default=["-created_at", "-id"])
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     page.object_list = _with_rows(page.object_list)
-    query = "&".join(f"{k}={v}" for k, v in f.items() if v)
+    query = urlencode({k: v for k, v in {**f, "sort": sort}.items() if v})
     return render(request, "estimator/material_logs.html", {
-        "page": page, "f": f, "query": query,
+        "page": page, "f": f, "query": query, "sort": sort,
         "source_choices": MaterialLog.SOURCE_CHOICES, "action_choices": MaterialLog.ACTION_CHOICES,
     })
 
@@ -239,8 +245,13 @@ def material_logs(request):
 @permission_required(PRICE_VIEW_PERM, raise_exception=True)
 def import_batches(request):
     qs = ImportBatch.objects.filter(status=ImportBatch.CONFIRMED).defer("file_data")
+    count = lambda name: Cast(KT(f"counts__{name}"), IntegerField())
+    qs, sort = sorting.apply(qs, request, {
+        "time": "confirmed_at", "user": "username", "file": "filename",
+        "new": count("new"), "changes": count("changes"), "deactivate": count("deactivate"), "prices": count("prices"),
+    }, default=["-created_at"])
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
-    return render(request, "estimator/import_batches.html", {"page": page})
+    return render(request, "estimator/import_batches.html", {"page": page, "sort": sort})
 
 
 @permission_required(PRICE_VIEW_PERM, raise_exception=True)

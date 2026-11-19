@@ -1209,3 +1209,67 @@ class MaterialLogTests(TestCase):
         self.assertEqual(entry.created_at, Material.objects.get(code="PTH-09").prices.first().created_at)
         migration.backfill(apps, None)                                     # 重複執行不會再加
         self.assertEqual(MaterialLog.objects.count(), Material.objects.count())
+
+
+class SortingTests(TestCase):
+    """多重排序：estimator/sorting.py，以及有分頁的列表（材料修改紀錄、Excel 匯入紀錄）。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.manager = User.objects.create_user("sort_mgr", password="pw-12345-x")
+        cls.manager.groups.add(Group.objects.get(name="價錢管理員"))
+        MaterialLog.objects.all().delete()
+        for code, action, username in [("B-2", MaterialLog.CHANGED, "amy"), ("A-1", MaterialLog.PRICE, "bob"),
+                                       ("A-1", MaterialLog.CHANGED, "cat"), ("B-2", MaterialLog.PRICE, "amy")]:
+            MaterialLog.objects.create(code=code, action=action, source=MaterialLog.FORM, username=username)
+        for name, new in [("a.xlsx", 5), ("b.xlsx", 20), ("c.xlsx", 0)]:
+            ImportBatch.objects.create(status=ImportBatch.CONFIRMED, filename=name, counts={"new": new})
+
+    def test_parse_ignores_unknown_and_duplicate_keys(self):
+        from . import sorting
+        allowed = {"a": "a", "b": "b"}
+        self.assertEqual(sorting.parse("a,-b", allowed), [("a", False), ("b", True)])
+        self.assertEqual(sorting.parse("-x, b, -b ,a", allowed), [("b", False), ("a", False)])
+        self.assertEqual(sorting.parse("", allowed), [])
+        self.assertEqual(sorting.to_param([("a", False), ("b", True)]), "a,-b")
+
+    def logs(self, **params):
+        self.client.force_login(self.manager)
+        resp = self.client.get(reverse("material_logs"), params)
+        return resp, [(e.code, e.action, e.username) for e in resp.context["page"].object_list]
+
+    def test_material_logs_multi_column_sort(self):
+        resp, rows = self.logs(sort="code,-user")
+        self.assertEqual(resp.context["sort"], "code,-user")
+        self.assertEqual(rows, [("A-1", "changed", "cat"), ("A-1", "price", "bob"),
+                                ("B-2", "price", "amy"), ("B-2", "changed", "amy")])
+        _, rows = self.logs(sort="-code,action")
+        self.assertEqual(rows, [("B-2", "changed", "amy"), ("B-2", "price", "amy"),
+                                ("A-1", "changed", "cat"), ("A-1", "price", "bob")])
+
+    def test_material_logs_default_and_bad_sort(self):
+        resp, rows = self.logs(sort="nope,-also_nope")
+        self.assertEqual(resp.context["sort"], "")
+        self.assertEqual(rows[0], ("B-2", "price", "amy"))              # 預設：最新的在最上面
+        self.assertContains(resp, 'data-multisort="server"')
+
+    def test_sort_kept_in_paging_links_and_filters(self):
+        resp, rows = self.logs(sort="-code", user="amy")
+        self.assertEqual({r[2] for r in rows}, {"amy"})
+        self.assertIn("sort=-code", resp.context["query"])
+        self.assertIn("user=amy", resp.context["query"])
+
+    def test_import_batches_sort_by_count(self):
+        self.client.force_login(self.manager)
+        resp = self.client.get(reverse("import_batches"), {"sort": "-new"})
+        self.assertEqual([b.filename for b in resp.context["page"]], ["b.xlsx", "a.xlsx", "c.xlsx"])
+        resp = self.client.get(reverse("import_batches"), {"sort": "file"})
+        self.assertEqual([b.filename for b in resp.context["page"]], ["a.xlsx", "b.xlsx", "c.xlsx"])
+
+    def test_client_side_tables_are_marked(self):
+        self.client.force_login(self.manager)
+        resp = self.client.get(reverse("price_list"))
+        self.assertContains(resp, 'id="price-table" data-multisort="client"')
+        self.assertContains(resp, 'data-sort="price"')
+        self.assertContains(resp, "window.MultiSort")

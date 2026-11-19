@@ -3,6 +3,7 @@ from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import get_object_or_404, render
 
+from estimator import sorting
 from estimator.views import can_see_price
 
 from . import recorder
@@ -35,10 +36,17 @@ def record_list(request):
             qs = qs.filter(user_id=int(who))
         users = (CalcRecord.objects.exclude(user=None).values_list("user_id", "user__username")
                  .distinct().order_by("user__username"))
+    show_price = can_see_price(request.user)
+    fields = {"time": "created_at", "system": "system_label", "area": "area"}
+    if users is not None:
+        fields["user"] = "user__username"
+    if show_price:                            # 沒有價錢權限：不可以按價錢排序
+        fields.update({"sqm": "total_per_sqm", "total": "grand_total"})
+    qs, sort = sorting.apply(qs, request, fields, default=["-created_at", "-id"])
     page = Paginator(qs, 50).get_page(request.GET.get("page"))
     return render(request, "history/list.html", {
-        "page": page, "users": users, "selected_user": request.GET.get("user", ""),
-        "can_see_price": can_see_price(request.user), "keep_days": recorder.keep_days(),
+        "page": page, "users": users, "selected_user": request.GET.get("user", ""), "sort": sort,
+        "can_see_price": show_price, "keep_days": recorder.keep_days(),
     })
 
 

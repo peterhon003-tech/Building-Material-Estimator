@@ -25,13 +25,14 @@
   <button class="btn secondary" type="submit">{% t "篩選" %}</button>
 </form>
 
-<table id="quote-table">
+{% include "includes/sort_hint.html" with table="quote-table" %}
+<table id="quote-table" data-multisort="server" data-sort-id="quotes" data-sort-current="{{ sort }}">
   <thead>
     <tr>
-      <th>{% t "報價編號" %}</th><th>{% t "客戶名稱" %}</th><th>{% t "工程名稱及地址" %}</th>
-      <th class="num">{% t "項目" %}</th>
-      {% if can_see_price %}<th class="num">{% t "合計 (HK$)" %}</th>{% endif %}
-      <th>{% t "狀態" %}</th><th>{% t "建立人" %}</th><th>{% t "最後修改" %}</th>
+      <th data-sort="number">{% t "報價編號" %}</th><th data-sort="customer">{% t "客戶名稱" %}</th><th data-sort="project">{% t "工程名稱及地址" %}</th>
+      <th class="num" data-sort="items">{% t "項目" %}</th>
+      {% if can_see_price %}<th class="num" data-sort="total">{% t "合計 (HK$)" %}</th>{% endif %}
+      <th data-sort="status">{% t "狀態" %}</th><th data-sort="creator">{% t "建立人" %}</th><th data-sort="updated">{% t "最後修改" %}</th>
     </tr>
   </thead>
   <tbody>
@@ -54,9 +55,9 @@
 
 {% if page.has_other_pages %}
 <p style="margin-top:12px">
-  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ f.q|urlencode }}&status={{ f.status }}&mine={{ f.mine }}{% if f.all_revisions %}&all_revisions=1{% endif %}">← {% t "上一頁" %}</a>{% endif %}
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ f.q|urlencode }}&status={{ f.status }}&mine={{ f.mine }}{% if f.all_revisions %}&all_revisions=1{% endif %}{% if sort %}&sort={{ sort|urlencode }}{% endif %}">← {% t "上一頁" %}</a>{% endif %}
   <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
-  {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ f.q|urlencode }}&status={{ f.status }}&mine={{ f.mine }}{% if f.all_revisions %}&all_revisions=1{% endif %}">{% t "下一頁" %} →</a>{% endif %}
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ f.q|urlencode }}&status={{ f.status }}&mine={{ f.mine }}{% if f.all_revisions %}&all_revisions=1{% endif %}{% if sort %}&sort={{ sort|urlencode }}{% endif %}">{% t "下一頁" %} →</a>{% endif %}
 </p>
 {% endif %}
 {% endblock %}

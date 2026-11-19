@@ -12,11 +12,12 @@
 </div>
 <p class="muted">{% t "顯示今日已生效的最新價錢。" %}{% if can_edit %}{% t "按「更新」輸入新價錢，舊價錢會保留在紀錄中。" %}{% else %}{% t "你只有查看權限，如需更新價錢請聯絡管理員。" %}{% endif %}</p>
 
-<table>
+{% include "includes/sort_hint.html" with table="price-table" %}
+<table id="price-table" data-multisort="client" data-sort-id="prices">
   <thead>
     <tr>
-      <th>{% t "類別" %}</th><th>{% t "編號" %}</th><th>{% t "名稱" %}</th><th>{% t "規格" %}</th><th>{% t "單位" %}</th>
-      <th class="num">{% t "單價 (HK$)" %}</th><th>{% t "供應商" %}</th><th>{% t "生效日期" %}</th><th></th>
+      <th data-sort="category">{% t "類別" %}</th><th data-sort="code">{% t "編號" %}</th><th data-sort="name">{% t "名稱" %}</th><th data-sort="spec">{% t "規格" %}</th><th data-sort="unit">{% t "單位" %}</th>
+      <th class="num" data-sort="price">{% t "單價 (HK$)" %}</th><th data-sort="supplier">{% t "供應商" %}</th><th data-sort="date">{% t "生效日期" %}</th><th></th>
     </tr>
   </thead>
   <tbody>
@@ -27,7 +28,7 @@
       <td>{{ r.material.local_name }}</td>
       <td>{{ r.material.local_spec }}</td>
       <td>{{ r.material.display_unit }}</td>
-      <td class="num">{% if r.price %}{{ r.price.unit_price|floatformat:2 }}{% else %}{% t "待提供" %}{% endif %}</td>
+      <td class="num" data-sort-value="{% if r.price %}{{ r.price.unit_price }}{% endif %}">{% if r.price %}{{ r.price.unit_price|floatformat:2 }}{% else %}{% t "待提供" %}{% endif %}</td>
       <td>{{ r.price.supplier|default:"" }}</td>
       <td>{{ r.price.effective_date|date:"Y-m-d"|default:"" }}</td>
       <td style="white-space:nowrap">

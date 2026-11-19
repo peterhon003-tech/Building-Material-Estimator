@@ -1,0 +1,171 @@
+{% load fb %}
+<style>
+  table[data-multisort] th[data-sort] { cursor:pointer; user-select:none; }
+  table[data-multisort] th[data-sort]:hover { background:#eaeef2; }
+  table[data-multisort] th[data-sort]:focus-visible { outline:2px solid #0969da; outline-offset:-2px; }
+  .sort-ind { color:#0969da; font-size:11px; margin-left:2px; }
+  .sort-hint { font-size:12px; margin:4px 0 6px; }
+</style>
+<script>
+// 多重排序：按欄位標題 = 只按這一欄排序（再按一次反轉）；Shift+按 = 加入下一層排序（再按反轉該層）。
+// <table data-multisort="client|server" data-sort-id="名稱">，可排序的 <th data-sort="鍵">。
+//   client：在瀏覽器排序目前的列（沒有分頁的表格）；儲存格可用 data-sort-value 提供排序用的值。
+//   server：改網址參數 sort=鍵1,-鍵2 再載入（有分頁的表格，由 estimator/sorting.py 排序）。
+// 排序會記在這個瀏覽器（localStorage），下次打開同一頁會自動套用。
+window.MultiSort = (function () {
+  var TIP = "{% filter escapejs %}{% t "按：按這一欄排序（再按反轉）；Shift+按：加入下一層排序" %}{% endfilter %}";
+  var collator = new Intl.Collator(document.documentElement.lang || undefined, { numeric: true, sensitivity: "base" });
+
+  function storageKey(table) { return "fb-sort:" + (table.dataset.sortId || table.id || location.pathname); }
+  function load(table) { try { return localStorage.getItem(storageKey(table)) || ""; } catch (e) { return ""; } }
+  function save(table, value) {
+    try { if (value) localStorage.setItem(storageKey(table), value); else localStorage.removeItem(storageKey(table)); } catch (e) { }
+  }
+  function parse(value) {
+    return (value || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean)
+      .map(function (s) { return { key: s.replace(/^-/, ""), desc: s.charAt(0) === "-" }; });
+  }
+  function format(specs) { return specs.map(function (s) { return (s.desc ? "-" : "") + s.key; }).join(","); }
+  function headers(table) { return table.tHead ? Array.prototype.slice.call(table.tHead.querySelectorAll("th[data-sort]")) : []; }
+  function known(table, specs) {
+    var keys = headers(table).map(function (th) { return th.dataset.sort; });
+    return specs.filter(function (s) { return keys.indexOf(s.key) >= 0; });
+  }
+
+  // 按標題後的新排序
+  function nextSpecs(specs, key, add) {
+    specs = specs.map(function (s) { return { key: s.key, desc: s.desc }; });
+    var i = specs.findIndex(function (s) { return s.key === key; });
+    if (add) {
+      if (i >= 0) specs[i].desc = !specs[i].desc; else specs.push({ key: key, desc: false });
+      return specs;
+    }
+    if (specs.length === 1 && i === 0) return [{ key: key, desc: !specs[0].desc }];
+    return [{ key: key, desc: false }];
+  }
+
+  // 標題旁顯示 ▲1 ▼2
+  function mark(table, specs) {
+    headers(table).forEach(function (th) {
+      var ind = th.querySelector(".sort-ind");
+      if (!ind) { ind = document.createElement("span"); ind.className = "sort-ind"; th.appendChild(ind); }
+      var i = specs.findIndex(function (s) { return s.key === th.dataset.sort; });
+      ind.textContent = i < 0 ? "" : (specs[i].desc ? "▼" : "▲") + (specs.length > 1 ? String(i + 1) : "");
+      th.setAttribute("aria-sort", i < 0 ? "none" : (specs[i].desc ? "descending" : "ascending"));
+    });
+    document.querySelectorAll('.multisort-clear[data-table="' + table.id + '"]').forEach(function (a) { a.hidden = !specs.length; });
+  }
+
+  function cellValue(td) {
+    if (!td) return "";
+    if (td.dataset.sortValue !== undefined) return td.dataset.sortValue;
+    var input = td.querySelector("input, select, textarea");
+    if (input) return input.value;
+    return td.textContent.trim();
+  }
+  function toNumber(v) {
+    var n = parseFloat(String(v).replace(/,/g, ""));
+    return isFinite(n) ? n : null;
+  }
+
+  // 在瀏覽器排序（空白值一律排最後；次序相同時保持原本次序）
+  function sortRows(table, specs) {
+    var body = table.tBodies[0];
+    if (!body) return;
+    var rows = Array.prototype.slice.call(body.rows);
+    if (!rows.length || rows.some(function (r) { return r.cells.length === 1 && r.cells[0].colSpan > 1; })) return;
+    rows.forEach(function (r, i) { if (r.dataset.sortOrig === undefined) r.dataset.sortOrig = i; });
+    var cols = specs.map(function (s) {
+      var th = headers(table).filter(function (h) { return h.dataset.sort === s.key; })[0];
+      return { index: th.cellIndex, desc: s.desc, num: th.classList.contains("num") || th.dataset.type === "num" };
+    });
+    rows.sort(function (a, b) {
+      for (var k = 0; k < cols.length; k++) {
+        var c = cols[k], va = cellValue(a.cells[c.index]), vb = cellValue(b.cells[c.index]), d;
+        if (c.num) {
+          var na = toNumber(va), nb = toNumber(vb);
+          if (na === null && nb === null) continue;
+          if (na === null) return 1;
+          if (nb === null) return -1;
+          d = na - nb;
+        } else {
+          if (!va && !vb) continue;
+          if (!va) return 1;
+          if (!vb) return -1;
+          d = collator.compare(va, vb);
+        }
+        if (d) return c.desc ? -d : d;
+      }
+      return Number(a.dataset.sortOrig) - Number(b.dataset.sortOrig);
+    });
+    rows.forEach(function (r) { body.appendChild(r); });
+  }
+
+  function apply(table, specs) {
+    var value = format(specs);
+    save(table, value);
+    if (table.dataset.multisort === "server") {
+      var url = new URL(location.href);
+      if (value) url.searchParams.set("sort", value); else url.searchParams.delete("sort");
+      url.searchParams.delete("page");
+      location.href = url.toString();
+      return;
+    }
+    table._sortSpecs = specs;
+    sortRows(table, specs);
+    mark(table, specs);
+  }
+
+  function init(table) {
+    if (table._multisortReady) return;
+    table._multisortReady = true;
+    if (table.dataset.multisort === "server") {
+      var current = table.dataset.sortCurrent || "";
+      var url = new URL(location.href);
+      if (!url.searchParams.has("sort")) {
+        var saved = load(table);
+        if (saved && saved !== current) {            // 套用上次的排序（只會轉一次：伺服器不認識的鍵會被略過）
+          url.searchParams.set("sort", saved);
+          location.replace(url.toString());
+          return;
+        }
+      } else {
+        save(table, current);
+      }
+      table._sortSpecs = parse(current);
+    } else {
+      table._sortSpecs = known(table, parse(load(table)));
+      sortRows(table, table._sortSpecs);
+    }
+    mark(table, table._sortSpecs);
+
+    headers(table).forEach(function (th) {
+      th.tabIndex = 0;
+      th.title = TIP;
+      th.addEventListener("mousedown", function (e) { if (e.shiftKey) e.preventDefault(); });   // Shift+按不選取文字
+      function go(e) { apply(table, nextSpecs(table._sortSpecs, th.dataset.sort, e.shiftKey)); }
+      th.addEventListener("click", go);
+      th.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } });
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest(".multisort-clear");
+    if (!a) return;
+    e.preventDefault();
+    var table = document.getElementById(a.dataset.table);
+    if (table) apply(table, []);
+  });
+
+  document.querySelectorAll("table[data-multisort]").forEach(init);
+
+  return {
+    // 表格內容由 JavaScript 重新產生後（例如計價頁的「調整」），重新套用目前的排序
+    refresh: function (table) {
+      if (!table) return;
+      if (!table._multisortReady) { init(table); return; }
+      if (table.dataset.multisort !== "server") { sortRows(table, table._sortSpecs || []); mark(table, table._sortSpecs || []); }
+    }
+  };
+})();
+</script>

@@ -17,13 +17,14 @@
 </form>
 {% endif %}
 
-<table>
+{% include "includes/sort_hint.html" with table="history-table" %}
+<table id="history-table" data-multisort="server" data-sort-id="history" data-sort-current="{{ sort }}">
   <thead>
     <tr>
-      <th>{% t "時間" %}</th>
-      {% if users %}<th>{% t "用戶" %}</th>{% endif %}
-      <th>{% t "系統" %}</th><th class="num">{% t "總面積" %}</th>
-      {% if can_see_price %}<th class="num">{% t "每 m² 合計" %} (HK$)</th><th class="num">{% t "合計" %} (HK$)</th>{% endif %}
+      <th data-sort="time">{% t "時間" %}</th>
+      {% if users %}<th data-sort="user">{% t "用戶" %}</th>{% endif %}
+      <th data-sort="system">{% t "系統" %}</th><th class="num" data-sort="area">{% t "總面積" %}</th>
+      {% if can_see_price %}<th class="num" data-sort="sqm">{% t "每 m² 合計" %} (HK$)</th><th class="num" data-sort="total">{% t "合計" %} (HK$)</th>{% endif %}
       <th></th>
     </tr>
   </thead>
@@ -48,9 +49,9 @@
 
 {% if page.has_other_pages %}
 <p style="margin-top:12px">
-  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if selected_user %}&user={{ selected_user|urlencode }}{% endif %}">← {% t "上一頁" %}</a>{% endif %}
+  {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}{% if selected_user %}&user={{ selected_user|urlencode }}{% endif %}{% if sort %}&sort={{ sort|urlencode }}{% endif %}">← {% t "上一頁" %}</a>{% endif %}
   <span class="muted">{{ page.number }} / {{ page.paginator.num_pages }}</span>
-  {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if selected_user %}&user={{ selected_user|urlencode }}{% endif %}">{% t "下一頁" %} →</a>{% endif %}
+  {% if page.has_next %}<a href="?page={{ page.next_page_number }}{% if selected_user %}&user={{ selected_user|urlencode }}{% endif %}{% if sort %}&sort={{ sort|urlencode }}{% endif %}">{% t "下一頁" %} →</a>{% endif %}
 </p>
 {% endif %}
 {% endblock %}

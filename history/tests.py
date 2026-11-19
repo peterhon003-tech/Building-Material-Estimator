@@ -151,3 +151,23 @@ class HistoryTests(TestCase):
             with self.assertLogs("history.receivers", level="ERROR"):
                 resp = self.calc(self.est)
         self.assertEqual(resp.status_code, 200)
+
+
+    # ---------- 多重排序 ----------
+    def test_list_sort_by_area_then_time(self):
+        self.calc(self.est, area="200")
+        self.calc(self.est, area="50")
+        self.calc(self.est, hours="1", area="50")
+        self.client.force_login(self.est)
+        resp = self.client.get(reverse("history_list"), {"sort": "area,-time"})
+        self.assertEqual(resp.context["sort"], "area,-time")
+        areas = [r.area for r in resp.context["page"].object_list]
+        self.assertEqual(areas, [Decimal("50.00"), Decimal("50.00"), Decimal("200.00")])
+        recs = list(resp.context["page"].object_list)
+        self.assertGreaterEqual(recs[0].created_at, recs[1].created_at)
+
+    def test_list_price_sort_needs_permission(self):
+        self.calc(self.plain)
+        self.client.force_login(self.plain)
+        resp = self.client.get(reverse("history_list"), {"sort": "-total"})
+        self.assertEqual(resp.context["sort"], "")

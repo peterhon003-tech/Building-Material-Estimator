@@ -393,6 +393,27 @@ class QuoteTests(TestCase):
         self.assertEqual({q.pk for q in resp.context["page"].object_list}, {quote.pk, rev_b.pk})
         self.assertEqual(resp.context["page"].object_list[0].item_count, 1)
 
+    def test_list_multi_column_sort(self):
+        q1 = self.new_quote(area="100")
+        q2 = self.new_quote(area="50")
+        q3 = self.new_quote(user=self.est2, area="200")
+        Quotation.objects.filter(pk=q1.pk).update(customer_name="B Co")
+        Quotation.objects.filter(pk=q2.pk).update(customer_name="A Co")
+        Quotation.objects.filter(pk=q3.pk).update(customer_name="A Co")
+        self.client.force_login(self.est)
+        resp = self.client.get(reverse("quote_list"), {"sort": "customer,-total"})
+        self.assertEqual(resp.context["sort"], "customer,-total")
+        self.assertEqual([q.pk for q in resp.context["page"].object_list], [q3.pk, q2.pk, q1.pk])
+        self.assertContains(resp, 'data-sort="total"')
+
+    def test_list_cannot_sort_by_total_without_price_permission(self):
+        self.new_quote(area="100")
+        self.new_quote(area="50")
+        self.client.force_login(self.plain)
+        resp = self.client.get(reverse("quote_list"), {"sort": "-total"})
+        self.assertEqual(resp.context["sort"], "")                      # 不認識的鍵：略過，用預設次序
+        self.assertNotContains(resp, 'data-sort="total"')
+
     def test_list_newest_first(self):
         old = services.create_quotation(self.est)
         new = services.create_quotation(self.est)

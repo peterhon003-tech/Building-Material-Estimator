@@ -1,7 +1,7 @@
 {% load fb %}
-<table class="log-table">
+<table class="log-table"{% if sortable %} id="log-table" data-multisort="server" data-sort-id="material_logs" data-sort-current="{{ sort }}"{% endif %}>
   <thead>
-    <tr><th>{% t "時間" %}</th>{% if show_code %}<th>{% t "編號" %}</th>{% endif %}<th>{% t "動作" %}</th><th>{% t "來源" %}</th><th>{% t "帳戶" %}</th><th>{% t "改動" %}</th></tr>
+    <tr><th{% if sortable %} data-sort="time"{% endif %}>{% t "時間" %}</th>{% if show_code %}<th{% if sortable %} data-sort="code"{% endif %}>{% t "編號" %}</th>{% endif %}<th{% if sortable %} data-sort="action"{% endif %}>{% t "動作" %}</th><th{% if sortable %} data-sort="source"{% endif %}>{% t "來源" %}</th><th{% if sortable %} data-sort="user"{% endif %}>{% t "帳戶" %}</th><th>{% t "改動" %}</th></tr>
   </thead>
   <tbody>
     {% for e in logs %}
