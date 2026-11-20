@@ -463,7 +463,8 @@
       const o = original[r._orig] || {};
       cell(tr, "num").textContent = (r.state === "added" || o.wastage == null) ? "—" : o.wastage;
       r._cells.waste = cell(tr, "num");
-      if (editing && r.state !== "added" && r.qty0 != null) r._cells.waste.appendChild(wasteInput(r));
+      // 計算損耗 %：不用按「調整」也可以直接修改
+      if (r.state !== "added" && r.qty0 != null) r._cells.waste.appendChild(wasteInput(r));
       r._cells.qty = cell(tr, "num");
       if (editing) { r._qtyInput = input(r, "qty", true, T.qty); r._cells.qty.appendChild(r._qtyInput); }
       r._cells.unit = cell(tr);
@@ -491,7 +492,7 @@
     let basis = (r.qtyEdited && r.state !== "added") ? T.manual : (r.basis || "");
     if (wasteChanged && !r.qtyEdited && valid(num(r.wastage))) basis += "（" + T.waste_note.replace("{a}", r.wastage).replace("{b}", o0.wastage) + "）";
     cs.basis.textContent = basis;
-    if (!editing || r.state === "added" || r.qty0 == null) cs.waste.textContent = (r.state === "added" || r.wastage == null) ? "—" : r.wastage;
+    if (r.state === "added" || r.qty0 == null) cs.waste.textContent = (r.state === "added" || r.wastage == null) ? "—" : r.wastage;
     cs.waste.classList.toggle("adj-changed", wasteChanged);
     if (!editing) cs.qty.textContent = c.qty === null ? T.tbc : fmt(c.qty, 4);
     if (cs.totalQty) cs.totalQty.textContent = c.totalQty === null ? T.tbc : fmt(c.totalQty, 2);
@@ -547,6 +548,7 @@
     render();
   });
   rows.forEach((r, i) => r._orig = i);
+  render();                                   // 一開始就顯示可修改的「計算損耗 %」
 
   // 目前畫面上的明細（包括調整），供匯出和另存為報價。數字格式錯誤時傳回 null
   function payload() {

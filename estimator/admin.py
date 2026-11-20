@@ -4,6 +4,8 @@
 新增價錢一律經網站的「原料價錢」頁（逐項更新或 Excel 匯入），
 確保每個價錢都有修改人和時間，舊價錢永遠保留。
 """
+from decimal import Decimal
+
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
@@ -119,9 +121,65 @@ class SystemComponentInline(admin.TabularInline):
     model = SystemComponent
     extra = 0
     autocomplete_fields = ["material"]
-    fields = ["item_no", "description", "description_en", "material", "method", "layers", "spacing_m",
-              "fixed_qty_per_sqm", "wastage_pct", "default_formula_display", "formula", "note", "note_en"]
-    readonly_fields = ["default_formula_display"]
+    fields = ["item_no", "description", "description_en", "material", "material_data", "method", "layers",
+              "spacing_m", "fixed_qty_per_sqm", "wastage_pct", "default_formula_display", "formula",
+              "formula_values", "qty_preview", "note", "note_en"]
+    readonly_fields = ["material_data", "default_formula_display", "formula_values", "qty_preview"]
+
+    def get_formset(self, request, obj=None, **kwargs):
+        self._preview_cache = {}            # 同一系統只揀一次 stud
+        return super().get_formset(request, obj, **kwargs)
+
+    def _preview(self, obj):
+        from . import services
+        cache = getattr(self, "_preview_cache", None)
+        key = ("row", obj.pk)
+        if cache is not None and key in cache:
+            return cache[key]
+        result = services.formula_preview(obj, cache)
+        if cache is not None:
+            cache[key] = result
+        return result
+
+    @staticmethod
+    def _num(d):
+        return "—" if d is None else f"{Decimal(str(d)).normalize():f}"
+
+    @admin.display(description=tl("材料數據"))
+    def material_data(self, obj):
+        """所選材料的計價單位和每單位涵蓋量（公式的「涵蓋量」）。"""
+        if obj is None or not obj.pk:
+            return "—"
+        m = obj.material
+        per = "m²" if m.category in ("BOARD", "ROCKWOOL") else "m"
+        return tr("每{unit} {cov} {per}", unit=m.display_unit(), cov=self._num(m.coverage), per=per)
+
+    @admin.display(description=tl("公式用到的數值"))
+    def formula_values(self, obj):
+        """實際公式用到的變數 = 數值（Partition 以第一個牆高試算）。"""
+        if obj is None or not obj.pk:
+            return "—"
+        p = self._preview(obj)
+        if not p["used"]:
+            return "—"
+        units = {"涵蓋量": "", "間距": " m", "損耗": "%", "牆高": " m"}
+        parts = [f"{tr(k)} = {self._num(p['values'][k])}{units.get(k, '') if p['values'][k] is not None else ''}"
+                 for k in p["used"]]
+        return "，".join(parts)
+
+    @admin.display(description=tl("試算每 m² 用量"))
+    def qty_preview(self, obj):
+        """用現時資料試算的每 m² 用量；Partition 註明試算用的牆高和 stud。"""
+        if obj is None or not obj.pk:
+            return "—"
+        p = self._preview(obj)
+        unit = p["material"].display_unit()
+        text = tr("待定") if p["qty"] is None else f"{p['qty'].quantize(Decimal('0.0001'))} {unit}"
+        if p["part"] is not None:
+            text += tr("（牆高 {h} m、{s} N/mm²）", h=self._num(p["part"].height_m), s=p["part"].stress)
+            if obj.method in ("STUD", "TRACK"):
+                text += f" · {p['material'].code}"
+        return text
 
     @admin.display(description=tl("預設公式"))
     def default_formula_display(self, obj):

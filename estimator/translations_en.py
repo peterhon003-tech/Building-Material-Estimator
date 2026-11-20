@@ -552,4 +552,9 @@ EN = {
     "損耗改為 {a}%（原 {b}%）": "Wastage changed to {a}% (was {b}%)",
     "現時損耗 %": "Current wastage %",
     "計算損耗 %": "Wastage % used",
+    "公式用到的數值": "Values used by the formula",
+    "材料數據": "Material data",
+    "每{unit} {cov} {per}": "{cov} {per} per {unit}",
+    "試算每 m² 用量": "Trial qty per m²",
+    "（牆高 {h} m、{s} N/mm²）": " (wall height {h} m, {s} N/mm²)",
 }

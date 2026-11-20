@@ -228,6 +228,35 @@ def _qty(c, m, ctx, w=None):
     return partition.anchor_qty(ctx.part.height_m, c.spacing_m, w)
 
 
+def formula_preview(c, ctx_cache=None):
+    """系統管理用：一個組件的公式變數數值和試算的每 m² 用量。
+
+    Partition 用第一個牆高選項（350 N/mm²）試算；傳回 dict(material, values, used, qty, part)。
+    ctx_cache：同一系統的組件共用揀 stud 的結果（dict，鍵為系統 id）。
+    """
+    system = c.system
+    part = None
+    if system.is_partition:
+        heights = system.height_options(partition.DEFAULT_STRESS)
+        if heights:
+            part = PartitionInput(heights[0], partition.DEFAULT_STRESS)
+    if ctx_cache is not None and system.pk in ctx_cache:
+        ctx = ctx_cache[system.pk]
+    else:
+        ctx = _height_ctx(system, part)
+        if ctx_cache is not None:
+            ctx_cache[system.pk] = ctx
+    m = _material_for(c, ctx)
+    try:
+        used = formula.variables_used(c.active_formula())
+    except formula.FormulaError:
+        used = []
+    qty = _qty(c, m, ctx)
+    if c.method in (calc.STUD, calc.TRACK) and ctx is not None and ctx.choice is None:
+        qty = None
+    return {"material": m, "values": _formula_values(c, m, ctx), "used": used, "qty": qty, "part": part}
+
+
 def _wastage_line(c, m, ctx):
     """損耗 0% 和 100% 的用量 → (損耗 0% 用量, 每 1% 增加量)，供網頁調整損耗時重算。資料不足時 (None, None)。"""
     q0, q100 = _qty(c, m, ctx, Decimal("0")), _qty(c, m, ctx, Decimal("100"))

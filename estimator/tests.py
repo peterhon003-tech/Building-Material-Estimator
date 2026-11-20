@@ -1525,3 +1525,32 @@ class AdjustWastageTests(TestCase):
         self.assertNotIn("損耗", out[1]["note"])
         with self.assertRaises(ValueError):
             compute_rows([{**rows[0], "wastage": "abc"}], None, False)
+
+
+# ---------- 系統管理：組件表的公式數據欄 ----------
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class FormulaPreviewTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.admin = User.objects.create_superuser("adm_prev", "a@example.com", "pw-12345-x")
+
+    def test_preview_matches_calculation(self):
+        s = services.find_system("PROMAT", 1, 1)
+        c = s.components.filter(method=calc.AREA).select_related("material").first()
+        p = services.formula_preview(c)
+        self.assertEqual(p["used"], ["層數", "涵蓋量", "損耗"])
+        self.assertEqual(p["values"]["涵蓋量"], c.material.coverage)
+        line = next(l for l in services.calculate(s).lines if l.item_no == c.item_no and l.description == c.description)
+        self.assertEqual(calc.round_qty(p["qty"]), line.qty)
+
+    def test_admin_page_shows_columns(self):
+        self.client.force_login(self.admin)
+        s = services.find_system("PROMAT", 1, 1)
+        resp = self.client.get(reverse("admin:estimator_firesystem_change", args=[s.pk]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "公式用到的數值")
+        self.assertContains(resp, "試算每 m² 用量")
+        self.assertContains(resp, "材料數據")
