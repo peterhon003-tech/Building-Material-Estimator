@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from . import calc, formula, partition
-from .i18n import tr
+from .i18n import EN_CODE, current_language, tr
 from .models import FireSystem, Material
 
 
@@ -265,6 +265,18 @@ def _wastage_line(c, m, ctx):
     return q0, (q100 - q0) / Decimal("100")
 
 
+def show_formula(text):
+    """按介面語言顯示公式：英文介面用英文變數，簡體介面用簡體。計法不變。"""
+    if current_language() == EN_CODE:
+        return formula.localize(text, True)
+    return tr(formula.localize(text, False))
+
+
+def variable_label(name):
+    """變數名稱（中文鍵）按介面語言顯示。"""
+    return formula.ENGLISH[name] if current_language() == EN_CODE else tr(name)
+
+
 def _custom_basis(c, coverage, ctx):
     """自訂公式的計算依據：公式 +（用到的變數 = 數值）。"""
     from types import SimpleNamespace
@@ -274,11 +286,8 @@ def _custom_basis(c, coverage, ctx):
     except formula.FormulaError:
         return tr("自訂公式有錯誤：{f}", f=text)
     values = _formula_values(c, SimpleNamespace(coverage=coverage), ctx)
-    shown = text
-    for name in formula.VARIABLES:              # 英文介面時，變數名稱也翻譯
-        shown = shown.replace(name, tr(name))
-    parts = [f"{tr(k)} = {_num(values[k]) if values[k] is not None else '?'}" for k in used]
-    return tr("自訂公式：{f}", f=shown) + (f"（{'，'.join(parts)}）" if parts else "")
+    parts = [f"{variable_label(k)} = {_num(values[k]) if values[k] is not None else '?'}" for k in used]
+    return tr("自訂公式：{f}", f=show_formula(text)) + (f"（{'，'.join(parts)}）" if parts else "")
 
 
 def _height_basis(c, coverage, unit, ctx, w, cov):

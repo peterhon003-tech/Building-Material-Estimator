@@ -203,7 +203,8 @@ class SystemComponent(models.Model):
     formula = models.CharField(
         tl("自訂公式"), max_length=200, blank=True,
         help_text=tl("留空 = 用預設公式。計出每 m² 用量（材料單位）。可用變數：層數、涵蓋量、間距、每平方米數量、"
-                     "損耗（%）、牆高（m，只限 Partition）；可用 + - × ÷ ( )、最大(a, b)、最小(a, b)"),
+                     "損耗（%）、牆高（m，只限 Partition），也可用英文 layers、coverage、spacing、qty_per_m2、wastage、height；"
+                     "可用 + - * / ( )（* 乘、/ 除，空格可有可無）、最大(a, b)、最小(a, b)（或 max、min）"),
     )
     note = models.CharField(tl("備註"), max_length=200, blank=True)
     note_en = models.CharField(tl("英文備註"), max_length=200, blank=True)
@@ -232,13 +233,14 @@ class SystemComponent(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-        from .formula import validate
+        from .formula import check
         if self.formula.strip():
             system = getattr(self, "system", None) if self.system_id else None
             allow_height = system.is_partition if system else True
-            error = validate(self.formula, allow_height=allow_height)
-            if error:
-                raise ValidationError({"formula": tr(error)})
+            problem = check(self.formula, allow_height=allow_height)
+            if problem:
+                template, kwargs = problem
+                raise ValidationError({"formula": tr(template, **kwargs)})
 
 
 class UserProfile(models.Model):

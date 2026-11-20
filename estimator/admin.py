@@ -159,11 +159,12 @@ class SystemComponentInline(admin.TabularInline):
         """實際公式用到的變數 = 數值（Partition 以第一個牆高試算）。"""
         if obj is None or not obj.pk:
             return "—"
+        from . import services
         p = self._preview(obj)
         if not p["used"]:
             return "—"
         units = {"涵蓋量": "", "間距": " m", "損耗": "%", "牆高": " m"}
-        parts = [f"{tr(k)} = {self._num(p['values'][k])}{units.get(k, '') if p['values'][k] is not None else ''}"
+        parts = [f"{services.variable_label(k)} = {self._num(p['values'][k])}{units.get(k, '') if p['values'][k] is not None else ''}"
                  for k in p["used"]]
         return "，".join(parts)
 
@@ -186,7 +187,8 @@ class SystemComponentInline(admin.TabularInline):
         """按計算方式的預設公式（填了自訂公式就不會用）。"""
         if obj is None or not obj.pk:
             return "—"
-        text = obj.default_formula()
+        from . import services
+        text = services.show_formula(obj.default_formula())
         return f"{text}（{tr('不使用')}）" if obj.formula.strip() else text
 
 

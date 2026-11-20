@@ -1445,6 +1445,52 @@ class FormulaTests(TestCase):
         self.assertEqual(formula.validate("2 ÷ 牆高", allow_height=False), "只有 Partition 系統才可以用「牆高」。")
         self.assertEqual(formula.validate("最大(層數, 2) × 1.5 ÷ 涵蓋量"), "")
 
+    def test_normal_maths(self):
+        """和一般數學一樣：先括號，再 * /，最後 + -；空格可有可無；× ÷ 仍然接受。"""
+        from . import formula
+        v = {"層數": 2, "涵蓋量": Decimal("4")}
+        cases = {"1+2*3": 7, "(1+2)*3": 9, "10/4-1": Decimal("1.5"), "8/2/2": 2, "-層數+5": 3, "2*-3": -6,
+                 "層數+層數": 4, "層數*2/涵蓋量": 1, "層數 * 2 / 涵蓋量": 1, "層數×2÷涵蓋量": 1,
+                 "（1+2）＊3": 9, "最大(層數,3)*2": 6, "最小( 層數 , 1 )": 1, "层数*2": 4}
+        for text, expected in cases.items():
+            self.assertEqual(formula.evaluate(text, v), Decimal(expected), text)
+        self.assertEqual(formula.variables_used("涵蓋量*層數+層數"), ["層數", "涵蓋量"])
+
+    def test_english_and_simplified_names(self):
+        """英文變數（不分大小寫）、簡體、繁體都可以，計法一樣。"""
+        from . import formula
+        v = {"層數": 2, "涵蓋量": Decimal("4"), "損耗": Decimal("10"), "每平方米數量": Decimal("3")}
+        self.assertEqual(formula.evaluate("layers*2/coverage", v), 1)
+        self.assertEqual(formula.evaluate("Layers + 层数 + 層數", v), 6)
+        self.assertEqual(formula.evaluate("MAX(layers, 3) * 2", v), 6)
+        self.assertEqual(formula.evaluate("qty_per_m2 * (1 + wastage / 100)", v), Decimal("3.3"))
+        self.assertEqual(formula.variables_used("layers/coverage"), ["層數", "涵蓋量"])
+        self.assertEqual(formula.validate("2 / height", allow_height=False), "只有 Partition 系統才可以用「牆高」。")
+        self.assertIn("乘號請用 *", formula.validate("layersx2"))
+        self.assertTrue(formula.validate("maxi(1, 2)"))
+
+    def test_localize(self):
+        from . import formula
+        self.assertEqual(formula.localize("最大(層數, 2) * 1.5 / 涵蓋量", True), "max(layers, 2) * 1.5 / coverage")
+        self.assertEqual(formula.localize("Layers*2 + max(1, 2)", False), "層數*2 + 最大(1, 2)")
+        for text in formula.DEFAULT.values():                 # 換成英文後計法不變
+            self.assertEqual(formula.localize(formula.localize(text, True), False), text)
+
+    def test_x_is_not_multiply(self):
+        from . import formula
+        for bad in ["層數x2 / 涵蓋量", "層數 x 2"]:
+            msg = formula.validate(bad)
+            self.assertIn("乘號請用 *", msg)
+            self.assertNotIn("layers", msg)
+
+    def test_error_messages(self):
+        from . import formula
+        self.assertEqual(formula.validate("(層數"), "括號不配對：缺少「)」。")
+        self.assertEqual(formula.validate("層數)"), "括號不配對：多了「)」。")
+        self.assertEqual(formula.validate("層數 2"), "公式中間缺少運算符號（+ - * /）。")
+        self.assertEqual(formula.validate("層數 +"), "公式不完整：最後缺少數字或變數。")
+        self.assertEqual(formula.validate("1/0"), "公式計算時出錯（例如除以 0），請檢查。")
+
     def test_missing_value_is_pending(self):
         from . import formula
         self.assertIsNone(formula.evaluate("每平方米數量 × 2", {"每平方米數量": None}))
@@ -1467,14 +1513,14 @@ class ComponentFormulaTests(TestCase):
         s, c = self._board()
         pick = lambda r: next(l for l in r.lines if l.item_no == c.item_no and l.description == c.description)
         before = pick(services.calculate(s))
-        c.formula = "層數 × 2 ÷ 涵蓋量"
+        c.formula = "層數*2/涵蓋量"
         c.full_clean()
         c.save()
         line = pick(services.calculate(s))
         expected = calc.round_qty(Decimal(c.layers) * 2 / c.material.coverage)
         self.assertEqual(line.qty, expected)
         self.assertNotEqual(line.qty, before.qty)
-        self.assertIn("自訂公式：層數 × 2 ÷ 涵蓋量", line.basis)
+        self.assertIn("自訂公式：層數*2/涵蓋量", line.basis)
         self.assertIn("（自訂公式）", line.method)
         c.formula = ""
         c.save()
@@ -1483,15 +1529,33 @@ class ComponentFormulaTests(TestCase):
     def test_invalid_formula_not_saved(self):
         from django.core.exceptions import ValidationError
         s, c = self._board()
-        for bad in ["層數 ÷ 牆高", "import os"]:
+        for bad in ["層數 ÷ 牆高", "import os", "層數x2"]:
             c.formula = bad
             with self.assertRaises(ValidationError):
                 c.full_clean()
 
     def test_default_formula_shown(self):
         s, c = self._board()
-        self.assertEqual(c.default_formula(), "層數 ÷ 涵蓋量 × (1 + 損耗 ÷ 100)")
+        self.assertEqual(c.default_formula(), "層數 / 涵蓋量 * (1 + 損耗 / 100)")
         self.assertEqual(c.active_formula(), c.default_formula())
+
+    def test_formula_shown_in_interface_language(self):
+        """英文介面顯示英文變數，簡體介面顯示簡體；英文寫的自訂公式也可以儲存和計算。"""
+        from django.utils import translation
+        s, c = self._board()
+        with translation.override("en"):
+            self.assertEqual(services.show_formula(c.default_formula()), "layers / coverage * (1 + wastage / 100)")
+        with translation.override("zh-hans"):
+            self.assertEqual(services.show_formula(c.default_formula()), "层数 / 涵盖量 * (1 + 损耗 / 100)")
+        c.formula = "layers*2/coverage"
+        c.full_clean()
+        c.save()
+        lines = services.calculate(s).lines
+        i = next(n for n, l in enumerate(lines) if l.item_no == c.item_no and l.description == c.description)
+        self.assertEqual(lines[i].qty, calc.round_qty(Decimal(c.layers) * 2 / c.material.coverage))
+        self.assertIn("自訂公式：層數*2/涵蓋量", lines[i].basis)
+        with translation.override("en"):              # 英文介面的材料名稱是英文，所以按同一行次序找
+            self.assertIn("Custom formula: layers*2/coverage", services.calculate(s).lines[i].basis)
 
 
 # ---------- 臨時調整：修改損耗 % ----------
