@@ -549,4 +549,7 @@ EN = {
     '只有 Partition 系統才可以用「牆高」。': 'Only Partition systems can use 牆高 (wall height).',
     '公式計算時出錯（例如除以 0），請檢查。': 'The formula could not be calculated (e.g. division by 0). Please check.',
     '公式不正確。': 'The formula is not valid.',
+    "損耗改為 {a}%（原 {b}%）": "Wastage changed to {a}% (was {b}%)",
+    "現時損耗 %": "Current wastage %",
+    "計算損耗 %": "Wastage % used",
 }

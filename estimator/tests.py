@@ -1492,3 +1492,36 @@ class ComponentFormulaTests(TestCase):
         s, c = self._board()
         self.assertEqual(c.default_formula(), "層數 ÷ 涵蓋量 × (1 + 損耗 ÷ 100)")
         self.assertEqual(c.active_formula(), c.default_formula())
+
+
+# ---------- 臨時調整：修改損耗 % ----------
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class AdjustWastageTests(TestCase):
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+
+    def test_payload_has_wastage_and_linear_qty(self):
+        s = services.find_system("PROMAT", 1, 1)
+        r = services.calculate(s, with_options=True)
+        data = services.adjust_payload(r, "PROMAT", "1", "1", "price")
+        board = next(l for l in data["lines"] if l["qty0"] is not None and Decimal(l["wastage"]) > 0)
+        q = Decimal(board["qty0"]) + Decimal(board["slope"]) * Decimal(board["wastage"])
+        self.assertEqual(calc.round_qty(q), calc.round_qty(Decimal(board["qty"])))
+        # 改損耗 0%：用量 = qty0；用其他產品時也有 qty0、slope
+        self.assertLess(Decimal(board["qty0"]), Decimal(board["qty"]))
+        self.assertTrue(all("qty0" in o and "slope" in o for o in board["options"]))
+
+    def test_changed_wastage_noted(self):
+        from .adjust import compute_rows
+        rows = [{"item_no": 1, "description": "板", "material": "x", "unit": "張", "qty": "0.5", "state": "edited",
+                 "wastage": "5", "wastage_orig": "10"},
+                {"item_no": 2, "description": "槽", "material": "y", "unit": "支", "qty": "1", "state": "original",
+                 "wastage": "10", "wastage_orig": "10"}]
+        out = compute_rows(rows, None, False)
+        self.assertIn("損耗改為 5%（原 10%）", out[0]["note"])
+        self.assertNotIn("損耗", out[1]["note"])
+        with self.assertRaises(ValueError):
+            compute_rows([{**rows[0], "wastage": "abc"}], None, False)

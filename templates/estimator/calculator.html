@@ -107,6 +107,8 @@
   <thead>
     <tr>
       <th data-sort="item" data-type="num">#</th><th data-sort="desc">{% t "項目" %}</th><th data-sort="material">{% t "材料 / 規格" %}</th><th data-sort="method">{% t "計算方式" %}</th>
+      <th class="num" data-sort="waste_now" data-type="num">{% t "現時損耗 %" %}</th>
+      <th class="num" data-sort="waste" data-type="num">{% t "計算損耗 %" %}</th>
       <th class="num" data-sort="qty">{% t "每 m² 用量" %}</th><th data-sort="unit">{% t "單位" %}</th>
       {% if result.area %}<th class="num" data-sort="total_qty">{% t "總用量" %}</th><th class="num" data-sort="order_qty">{% t "訂購數量" %}</th>{% endif %}
       {% if can_see_price %}<th class="num" data-sort="price">{% t "單價 (HK$)" %}</th><th class="num" data-sort="cost">{% t "每 m² 價錢 (HK$)" %}</th>{% if result.area %}<th class="num" data-sort="total_cost">{% t "總價 (HK$)" %}</th>{% endif %}{% endif %}
@@ -119,6 +121,8 @@
       <td>{{ l.description }}{% if l.note %}<br><span class="muted">{{ l.note }}</span>{% endif %}</td>
       <td>{{ l.material }}</td>
       <td>{{ l.method }}<br><span class="muted">{{ l.basis }}</span></td>
+      <td class="num" data-sort-value="{% if l.wastage_pct is not None %}{{ l.wastage_pct }}{% endif %}">{% if l.wastage_pct is not None %}{{ l.wastage_pct|floatformat:"-2" }}{% else %}—{% endif %}</td>
+      <td class="num" data-sort-value="{% if l.wastage_pct is not None %}{{ l.wastage_pct }}{% endif %}">{% if l.wastage_pct is not None %}{{ l.wastage_pct|floatformat:"-2" }}{% else %}—{% endif %}</td>
       <td class="num" data-sort-value="{% if l.qty is not None %}{{ l.qty }}{% endif %}">{% if l.qty is not None %}{{ l.qty|floatformat:4 }}{% else %}{% t "待定" %}{% endif %}</td>
       <td>{{ l.unit }}</td>
       {% if result.area %}
@@ -136,7 +140,7 @@
   {% if can_see_price %}
   <tfoot>
     <tr>
-      <td colspan="{% if result.area %}9{% else %}7{% endif %}">{% t "合計（已計項目）" %}</td>
+      <td colspan="{% if result.area %}11{% else %}9{% endif %}">{% t "合計（已計項目）" %}</td>
       <td class="num"><span id="total-sqm">{{ result.total|floatformat:2 }}</span><br><span class="muted" style="font-weight:400">{% t "每 m²" %}</span></td>
       {% if result.area %}<td class="num"><span id="total-all">{{ result.grand_total|floatformat:2 }}</span><br><span class="muted" style="font-weight:400">{{ result.area|floatformat:2 }} m²</span></td>{% endif %}
     </tr>
@@ -340,6 +344,32 @@
     return i;
   }
 
+  // 按損耗重算每 m² 用量（只用於原配方的行；資料不足時不變）
+  function applyWaste(r) {
+    const w = num(r.wastage);
+    if (!valid(w) || r.qty0 == null || r.slope == null) return;
+    const q = Number(r.qty0) + Number(r.slope) * w;
+    r.qty = String(q); r.qty_display = round(q, 4).toFixed(4);
+    r.qtyEdited = false; r.numDirty = true;
+    if (r._qtyInput) { r._qtyInput.value = r.qty_display; r._qtyInput.classList.remove("adj-bad"); }
+  }
+
+  function wasteInput(r) {
+    const i = el("input", { type: "text", class: "adj-in num", inputmode: "decimal", "aria-label": T.waste });
+    i.style.maxWidth = "70px";
+    i.value = r.wastage ?? "";
+    i.addEventListener("input", function () {
+      r.wastage = i.value;
+      const bad = isNaN(num(i.value)) || num(i.value) === null;
+      i.classList.toggle("adj-bad", bad);
+      if (!bad) applyWaste(r);
+      if (r.state === "original") r.state = "edited";
+      markAdjusted();
+      refreshRow(r); refreshTotals();
+    });
+    return i;
+  }
+
   // 換產品的下拉選單：原有的行 = 同類別產品（伺服器已計好用量）；新增的行 = 所有材料
   function productSelect(r) {
     const sel = el("select", { class: "adj-sel", "aria-label": T.material });
@@ -379,7 +409,8 @@
       } else {
         r.code = opt.code; r.material = opt.label; r.unit = opt.unit; r.round_up = opt.round_up;
         r.qty = opt.qty; r.qty_display = opt.qty === null ? null : round(Number(opt.qty), 4).toFixed(4);
-        r.basis = opt.basis;
+        r.basis = opt.basis; r.qty0 = opt.qty0; r.slope = opt.slope;
+        applyWaste(r);                                      // 保留這一行目前的損耗 %
         if (showPrices) { r.unit_price = opt.unit_price ?? ""; r.supplier = opt.supplier || ""; r.price_date = opt.price_date || ""; }
         r.numDirty = true; r.qtyEdited = false; r.priceEdited = false;
         r.offSpec = true; r.replaced_from = o.material; r.state = "edited";
@@ -427,8 +458,14 @@
       tdMethod.appendChild(el("br"));
       r._cells.basis = el("span", { class: "muted" }); tdMethod.appendChild(r._cells.basis);
 
+      // 損耗 %：調整時可修改，每 m² 用量按「損耗 0% 用量 + 每 1% 增加量 × 損耗」即時重算
+      // 現時損耗 %：系統配方的設定（只顯示，不可修改）
+      const o = original[r._orig] || {};
+      cell(tr, "num").textContent = (r.state === "added" || o.wastage == null) ? "—" : o.wastage;
+      r._cells.waste = cell(tr, "num");
+      if (editing && r.state !== "added" && r.qty0 != null) r._cells.waste.appendChild(wasteInput(r));
       r._cells.qty = cell(tr, "num");
-      if (editing) r._cells.qty.appendChild(input(r, "qty", true, T.qty));
+      if (editing) { r._qtyInput = input(r, "qty", true, T.qty); r._cells.qty.appendChild(r._qtyInput); }
       r._cells.unit = cell(tr);
       if (editing) r._cells.unit.appendChild(input(r, "unit", false, T.unit)); else r._cells.unit.textContent = r.unit || "";
 
@@ -449,7 +486,13 @@
 
   function refreshRow(r) {
     const c = compute(r), cs = r._cells;
-    cs.basis.textContent = (r.qtyEdited && r.state !== "added") ? T.manual : (r.basis || "");
+    const o0 = original[r._orig] || {};
+    const wasteChanged = r.state !== "added" && num(r.wastage) !== num(o0.wastage);
+    let basis = (r.qtyEdited && r.state !== "added") ? T.manual : (r.basis || "");
+    if (wasteChanged && !r.qtyEdited && valid(num(r.wastage))) basis += "（" + T.waste_note.replace("{a}", r.wastage).replace("{b}", o0.wastage) + "）";
+    cs.basis.textContent = basis;
+    if (!editing || r.state === "added" || r.qty0 == null) cs.waste.textContent = (r.state === "added" || r.wastage == null) ? "—" : r.wastage;
+    cs.waste.classList.toggle("adj-changed", wasteChanged);
     if (!editing) cs.qty.textContent = c.qty === null ? T.tbc : fmt(c.qty, 4);
     if (cs.totalQty) cs.totalQty.textContent = c.totalQty === null ? T.tbc : fmt(c.totalQty, 2);
     if (cs.order) { cs.order.innerHTML = ""; cs.order.appendChild(el("strong", {}, fmtOrder(c.order))); }
@@ -507,13 +550,16 @@
 
   // 目前畫面上的明細（包括調整），供匯出和另存為報價。數字格式錯誤時傳回 null
   function payload() {
-    const bad = rows.some(r => isNaN(num(r.qty)) || (showPrices && isNaN(num(r.unit_price))));
+    const bad = rows.some(r => isNaN(num(r.qty)) || (showPrices && isNaN(num(r.unit_price)))
+                          || (r.state !== "added" && r.qty0 != null && !valid(num(r.wastage))));
     if (bad) { window.alert(T.invalid); return null; }
     const lines = rows.map(function (r) {
       const o = { item_no: r.item_no, description: r.description, material: r.material, unit: r.unit,
                   qty: r.qty ?? "", round_up: r.round_up, state: r.state, method: r.method,
                   basis: (r.qtyEdited && r.state !== "added") ? T.manual : r.basis, note: r.note,
-                  code: r.code || "", replaced_from: r.replaced_from || "", off_spec: !!r.offSpec };
+                  code: r.code || "", replaced_from: r.replaced_from || "", off_spec: !!r.offSpec,
+                  wastage: r.state === "added" ? "" : (r.wastage ?? ""),
+                  wastage_orig: r.state === "added" ? "" : ((original[r._orig] || {}).wastage ?? "") };
       if (showPrices) { o.unit_price = r.unit_price ?? ""; o.supplier = r.supplier; o.price_date = r.price_date; }
       return o;
     });

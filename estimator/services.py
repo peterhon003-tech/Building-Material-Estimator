@@ -80,6 +80,9 @@ class Line:
     round_up: bool = True                # 訂購數量是否向上進位至整數
     code: str = ""                       # 材料編號
     options: list = field(default_factory=list)   # 臨時調整：同類別可替換的產品
+    wastage_pct: Decimal | None = None   # 損耗 %（臨時調整可修改）
+    qty_w0: Decimal | None = None        # 損耗 0% 時的每 m² 用量
+    qty_slope: Decimal | None = None     # 損耗每加 1% 增加的用量（用量 = qty_w0 + qty_slope × 損耗）
 
     @property
     def pending(self):
@@ -197,32 +200,40 @@ def _stud_spacing(c):
     return c.spacing_m or Decimal("0.610")
 
 
-def _formula_values(c, m, ctx):
-    """公式變數的數值（中文名稱）。沒有的變數為 None（用到就變成待定）。"""
+def _formula_values(c, m, ctx, w=None):
+    """公式變數的數值（中文名稱）。沒有的變數為 None（用到就變成待定）。w：代替組件的損耗 %。"""
     height = ctx.part.height_m if ctx is not None and ctx.part is not None else None
     spacing = _stud_spacing(c) if c.method == calc.STUD else c.spacing_m
     return {"層數": c.layers or 1, "涵蓋量": m.coverage or None, "間距": spacing,
-            "每平方米數量": c.fixed_qty_per_sqm, "損耗": c.wastage_pct or 0, "牆高": height}
+            "每平方米數量": c.fixed_qty_per_sqm, "損耗": (c.wastage_pct or 0) if w is None else w, "牆高": height}
 
 
-def _qty(c, m, ctx):
-    """一個組件用材料 m 時的每 m² 用量（未四捨五入）。資料不足時 None。"""
+def _qty(c, m, ctx, w=None):
+    """一個組件用材料 m 時的每 m² 用量（未四捨五入）。資料不足時 None。w：代替組件的損耗 %。"""
+    w = c.wastage_pct if w is None else w
     if c.formula.strip():                       # 管理員填了自訂公式
         try:
-            return formula.evaluate(c.formula, _formula_values(c, m, ctx))
+            return formula.evaluate(c.formula, _formula_values(c, m, ctx, w))
         except formula.FormulaError:
             return None
     if c.method not in calc.HEIGHT_METHODS:
         return calc.qty_per_sqm(c.method, m.coverage, layers=c.layers, spacing_m=c.spacing_m,
-                                fixed_qty=c.fixed_qty_per_sqm, wastage_pct=c.wastage_pct)
+                                fixed_qty=c.fixed_qty_per_sqm, wastage_pct=w)
     if ctx is None or ctx.part is None:
         return None
     if c.method == calc.STUD:
-        return calc.qty_per_sqm(calc.SPACING, m.coverage, spacing_m=_stud_spacing(c),
-                                wastage_pct=c.wastage_pct)
+        return calc.qty_per_sqm(calc.SPACING, m.coverage, spacing_m=_stud_spacing(c), wastage_pct=w)
     if c.method == calc.TRACK:
-        return partition.track_qty(ctx.part.height_m, m.coverage, c.wastage_pct)
-    return partition.anchor_qty(ctx.part.height_m, c.spacing_m, c.wastage_pct)
+        return partition.track_qty(ctx.part.height_m, m.coverage, w)
+    return partition.anchor_qty(ctx.part.height_m, c.spacing_m, w)
+
+
+def _wastage_line(c, m, ctx):
+    """損耗 0% 和 100% 的用量 → (損耗 0% 用量, 每 1% 增加量)，供網頁調整損耗時重算。資料不足時 (None, None)。"""
+    q0, q100 = _qty(c, m, ctx, Decimal("0")), _qty(c, m, ctx, Decimal("100"))
+    if q0 is None or q100 is None:
+        return None, None
+    return q0, (q100 - q0) / Decimal("100")
 
 
 def _custom_basis(c, coverage, ctx):
@@ -298,6 +309,7 @@ def calculate(system, on_date=None, include_prices=True, area=None, with_options
         no_stud = c.method in (calc.STUD, calc.TRACK) and ctx is not None and ctx.choice is None
         if no_stud:
             qty = None                      # 沒有合用 stud：不可以用配方的預設槽鐵計
+        w0, slope = (None, None) if no_stud else _wastage_line(c, m, ctx)
         price = None if no_stud else price_of(m)
         unit_price = price.unit_price if price else None
         unit = m.display_unit()
@@ -323,6 +335,9 @@ def calculate(system, on_date=None, include_prices=True, area=None, with_options
             round_up=m.unit not in calc.NO_ROUND_UNITS,
             code="" if no_stud else m.code,
             options=_component_options(c, m, by_category, price_of, ctx) if with_options else [],
+            wastage_pct=c.wastage_pct,
+            qty_w0=w0,
+            qty_slope=slope,
         ))
     return result
 
@@ -333,9 +348,11 @@ def _component_options(c, original, by_category, price_of, ctx=None):
     options = []
     for m in candidates:
         qty = _qty(c, m, ctx)
+        q0, slope = _wastage_line(c, m, ctx)
         opt = {
             "code": m.code, "label": m.display_name(), "unit": m.display_unit(),
             "qty": None if qty is None else str(qty),
+            "qty0": None if q0 is None else str(q0), "slope": None if slope is None else str(slope),
             "basis": _basis(c, m.coverage, m.display_unit(), ctx),
             "round_up": m.unit not in calc.NO_ROUND_UNITS,
             "original": m.pk == original.pk,
@@ -388,6 +405,8 @@ def adjust_payload(result, brand, system_type, hours, view):
             "qty": _s(l.qty_exact), "qty_display": _s(l.qty), "round_up": l.round_up,
             "total_qty": _s(l.total_qty), "order_qty": _s(l.order_qty), "state": "original",
             "code": l.code, "options": l.options,
+            "wastage": None if l.wastage_pct is None else f"{l.wastage_pct.normalize():f}",
+            "qty0": _s(l.qty_w0), "slope": _s(l.qty_slope),
         }
         if show:
             row.update({

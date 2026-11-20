@@ -39,6 +39,7 @@ ADJUST_TEXT = {
     "item": "項目", "material": "材料 / 規格", "unit": "單位", "qty": "每 m² 用量", "price": "單價 (HK$)",
     "original": "原配方", "off_spec": "不在測試報告配方內，請確認是否符合耐火要求",
     "overwrite": "更換產品會覆蓋這一行的修改，繼續？", "choose": "選擇材料…",
+    "waste": "計算損耗 %", "waste_note": "損耗改為 {a}%（原 {b}%）",
 }
 PRICE_VIEW_PERM = "estimator.view_materialprice"
 

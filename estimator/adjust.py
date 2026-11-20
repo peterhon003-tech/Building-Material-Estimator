@@ -96,6 +96,11 @@ def compute_rows(rows, area, include_prices, t=_no_translate):
         if replaced_from:
             note = "；".join(x for x in (note, t("已替換：{a} → {b}", a=replaced_from,
                                                       b=_text(r.get("material")))) if x)
+        wastage = _number(r.get("wastage"), Decimal("1000"), "損耗 %", t)
+        wastage_orig = _number(r.get("wastage_orig"), Decimal("1000"), "損耗 %", t)
+        if state != "added" and wastage is not None and wastage_orig is not None and wastage != wastage_orig:
+            note = "；".join(x for x in (note, t("損耗改為 {a}%（原 {b}%）", a=f"{wastage.normalize():f}",
+                                                       b=f"{wastage_orig.normalize():f}")) if x)
         if r.get("off_spec"):
             note = "；".join(x for x in (note, t("不在測試報告配方內，請確認是否符合耐火要求")) if x)
         if state == "edited":
