@@ -502,4 +502,31 @@ EN = {
         "Sorting only changes the display; Excel export and Save as quotation keep the original order.",
     "清除排序": "Clear sorting",
     "按：按這一欄排序（再按反轉）；Shift+按：加入下一層排序": "Click: sort by this column (click again to reverse); Shift+click: add as the next sort level",
+
+    # ---------- Partition（按牆高揀 stud） ----------
+    "2 ÷ {s} m ÷ 牆高 {h} m × {w}": "2 ÷ {s} m ÷ wall height {h} m × {w}",
+    "2 ÷ 牆高 {h} m × {w} ÷ {cov} m/{unit}": "2 ÷ wall height {h} m × {w} ÷ {cov} m/{unit}",
+    "Stud 屈服強度": "Stud yield stress",
+    "Stud 表": "Stud table",
+    "Stud（按牆高揀）": "Stud (by wall height)",
+    "厚度 (mm)": "Thickness (mm)",
+    '只用於 Partition：每個屈服強度的牆高選項，例如 {"350": [3300, 4000], "200": [3100, 4000]}；留空就用 stud 表的高度':
+        'Partition only: wall height options for each yield stress, e.g. {"350": [3300, 4000], "200": [3100, 4000]}; '
+        'leave blank to use the heights in the stud table',
+    "和 stud 相同的槽鐵": "Same channel as the stud",
+    "報告 stud 表：{spec} 最高 {h} mm（{s} N/mm²）": "Report stud table: {spec} up to {h} mm ({s} N/mm²)",
+    "報告沒有這個牆高的 stud 規格": "The report has no stud size for this wall height",
+    "屈服強度 (N/mm²)": "Yield stress (N/mm²)",
+    "最高牆高 (mm)": "Max. wall height (mm)",
+    "未有合用的槽鐵": "No suitable channel",
+    "材料表沒有合用的槽鐵": "No suitable channel in the material list",
+    "材料表沒有合用的槽鐵，報告最少要：{specs}": "No suitable channel in the material list; the report needs at least: {specs}",
+    "牆高": "Wall height",
+    "牆高 {h} m · {s} N/mm²": "Wall height {h} m · {s} N/mm²",
+    "牆高不在這個系統的選項內，請重新選擇。": "This wall height is not available for this system. Please choose again.",
+    "牆高選項 (mm)": "Wall height options (mm)",
+    "計算選項": "Calculation options",
+    "請選擇牆高。": "Please choose the wall height.",
+    "頂底槽螺栓（按牆高）": "Track anchors (by wall height)",
+    "頂底槽（按牆高）": "Top & bottom track (by wall height)",
 }

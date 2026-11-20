@@ -25,7 +25,8 @@ from .forms import MaterialForm, PriceForm, PriceImportForm
 from .i18n import LANGUAGE_CODES, all_languages, tr
 from .middleware import SESSION_KEY as LANGUAGE_SESSION_KEY
 from . import audit, sorting
-from .models import FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, SystemComponent
+from .models import FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, StudRule, SystemComponent
+from .partition import DEFAULT_STRESS
 
 IMPORT_SESSION_KEY = "price_import_rows"
 
@@ -80,6 +81,8 @@ def calculator(request):
     brand = request.GET.get("brand", "")
     system_type = request.GET.get("system_type", "")
     hours = request.GET.get("hours", "")
+    height_raw = request.GET.get("height", "")
+    stress_raw = request.GET.get("stress", "")
 
     area_raw = request.GET.get("area", "")
     area, area_error = parse_area(area_raw)
@@ -87,14 +90,16 @@ def calculator(request):
     result = None
     adjust_data = None
     not_available = False
+    partition_error = ""
     if brand and system_type and hours:
         try:
             system = services.find_system(brand, int(system_type), int(hours))
         except ValueError:
             system = None
-        if system:
+        part, partition_error = services.parse_partition(system, height_raw, stress_raw)
+        if system and not partition_error:
             result = services.calculate(system, include_prices=show_prices(request), area=area,
-                                        with_options=True)
+                                        with_options=True, part=part)
             adjust_data = services.adjust_payload(
                 result, brand, system_type, hours,
                 "material" if request.GET.get("view") == "material" else "price")
@@ -102,18 +107,24 @@ def calculator(request):
             calculation_done.send(sender=None, request=request, result=result, params={
                 "brand": brand, "system_type": system_type, "hours": hours, "area": area,
                 "view": "material" if request.GET.get("view") == "material" else "price",
+                "height": part.height_mm if part else None, "stress": part.stress if part else None,
             })
-        else:
+        elif not system:
             not_available = True
 
     return render(request, "estimator/calculator.html", {
         "brands": FireSystem.BRAND_CHOICES,
         "types": FireSystem.TYPE_CHOICES,
         "hours_choices": FireSystem.HOURS_CHOICES,
-        "selected": {"brand": brand, "system_type": system_type, "hours": hours},
+        "stress_choices": StudRule.STRESS_CHOICES,
+        "selected": {"brand": brand, "system_type": system_type, "hours": hours,
+                     "height": height_raw, "stress": stress_raw or str(DEFAULT_STRESS)},
         "availability": services.availability(),
+        "partition_choices": services.partition_choices(),
+        "partition_types": [str(t) for t in FireSystem.PARTITION_TYPES],
         "result": result,
         "not_available": not_available,
+        "partition_error": partition_error,
         "can_see_price": show_prices(request),          # 這次是否顯示價錢欄
         "price_allowed": can_see_price(request.user),   # 是否可以選擇「包括價錢」
         "view_mode": "material" if request.GET.get("view") == "material" else "price",
@@ -136,19 +147,24 @@ def calculator_export(request):
     if not system:
         messages.error(request, tr("請先選擇有效的品牌、系統和耐火時間。"))
         return redirect("calculator")
+    part, part_error = services.parse_partition(system, request.GET.get("height"), request.GET.get("stress"))
+    if part_error:
+        messages.error(request, part_error)
+        return redirect("calculator")
     with_prices = show_prices(request)
     area, _ = parse_area(request.GET.get("area", ""))
-    result = services.calculate(system, include_prices=with_prices, area=area)
+    result = services.calculate(system, include_prices=with_prices, area=area, part=part)
     content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices, t=tr)
-    return _xlsx_response(content, system, with_prices, result.on_date)
+    return _xlsx_response(content, system, with_prices, result.on_date, part=part)
 
 
-def _xlsx_response(content, system, with_prices, on_date, adjusted=False):
+def _xlsx_response(content, system, with_prices, on_date, adjusted=False, part=None):
     kind = "price" if with_prices else "material"
     extra = "-adjusted" if adjusted else ""
     type_name = dict(FireSystem.TYPE_CHOICES)[system.system_type].replace(" ", "-")
+    size = f"-H{part.height_mm}-{part.stress}" if part else ""
     filename = (f"{system.brand}-{type_name}-"
-                f"{system.fire_rating_hours}hr-{kind}{extra}-{on_date:%Y-%m-%d}.xlsx")
+                f"{system.fire_rating_hours}hr{size}-{kind}{extra}-{on_date:%Y-%m-%d}.xlsx")
     resp = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -169,16 +185,19 @@ def calculator_export_adjusted(request):
         return HttpResponseBadRequest(tr("資料格式不正確"))
     if not system:
         return HttpResponseBadRequest(tr("請先選擇有效的品牌、系統和耐火時間。"))
+    part, part_error = services.parse_partition(system, data.get("height"), data.get("stress"))
+    if part_error:
+        return HttpResponseBadRequest(part_error)
     # 價錢權限由伺服器決定：沒有權限或選了「只看材料」，送來的價錢一律忽略
     with_prices = can_see_price(request.user) and data.get("view") != "material"
     area, _ = parse_area(str(data.get("area") or ""))
     try:
-        result = services.adjusted_result(system, area, data.get("lines"), with_prices, t=tr)
+        result = services.adjusted_result(system, area, data.get("lines"), with_prices, t=tr, part=part)
     except ValueError as e:
         return HttpResponseBadRequest(str(e))
     content = build_calc_xlsx(result, user=request.user.get_username(), show_prices=with_prices,
                               t=tr, adjusted=True)
-    return _xlsx_response(content, system, with_prices, result.on_date, adjusted=True)
+    return _xlsx_response(content, system, with_prices, result.on_date, adjusted=True, part=part)
 
 
 # ---------- 原料價錢 ----------

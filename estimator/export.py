@@ -19,6 +19,17 @@ def _no_translate(text, **kwargs):
     return text.format(**kwargs) if kwargs else text
 
 
+def _partition_info(result, t):
+    """Partition：牆高、屈服強度、揀選的 stud。"""
+    part = getattr(result, "partition", None)
+    if not part:
+        return []
+    rows = [(t("牆高"), f"{part.height_mm} mm"), (t("Stud 屈服強度"), f"{part.stress} N/mm²")]
+    if not getattr(result, "adjusted", False):        # 調整後的 stud 以明細為準
+        rows.append((t("Stud"), getattr(result, "stud", "") or t("材料表沒有合用的槽鐵")))
+    return rows
+
+
 def build_calc_xlsx(result, user="", show_prices=True, t=_no_translate, adjusted=False):
     """show_prices=False：不包括任何價錢欄和合計（給沒有價錢權限的用戶）。
     t：翻譯函數（estimator.i18n.tr），令 Excel 內容跟隨介面語言。"""
@@ -37,13 +48,14 @@ def build_calc_xlsx(result, user="", show_prices=True, t=_no_translate, adjusted
     thin = Side(style="thin", color="CCCCCC")
     border = Border(bottom=thin)
 
-    ws.append([t("防火板計價：{name}", name=str(s))])
+    ws.append([t("防火板計價：{name}", name=getattr(result, "label", str(s)))])
     ws["A1"].font = title
     info = [
         ("F.R.R.", s.frr_label),
         (t("測試報告"), s.report_no),
         (t("系統總厚度"), f"{s.overall_thickness_mm} mm" if s.overall_thickness_mm else ""),
         (t("圖則"), s.drawing_ref),
+        *_partition_info(result, t),
         *([(t("價錢日期"), result.on_date.isoformat())] if show_prices else []),
         *([(t("總面積"), f"{result.area} m²")] if has_area else []),
         (t("匯出人"), user),

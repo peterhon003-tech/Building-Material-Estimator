@@ -25,6 +25,16 @@
         {% for v, label in hours_choices %}<option value="{{ v }}" data-label="{{ label }}" {% if selected.hours == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
       </select>
     </label>
+    <label class="partition-only" hidden>{% t "Stud 屈服強度" %}
+      <select name="stress" id="stress">
+        {% for v, label in stress_choices %}<option value="{{ v }}" {% if selected.stress == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="partition-only" hidden>{% t "牆高" %}
+      <select name="height" id="height" data-selected="{{ selected.height }}">
+        <option value="">{% t "請選擇" %}</option>
+      </select>
+    </label>
     <label>{% t "4. 總面積 (m²)" %}<span class="muted" style="font-size:12px">{% t "可選，留空只計每 m²" %}</span>
       <input type="number" name="area" id="area" min="0" step="0.01" placeholder="{% t "例如 120" %}" value="{{ area_raw }}" style="width:140px">
     </label>
@@ -48,6 +58,10 @@
   <div class="warnbox">{{ area_error }}{% t "（這次只計每 m²）" %}</div>
 {% endif %}
 
+{% if partition_error %}
+  <div class="warnbox">{{ partition_error }}</div>
+{% endif %}
+
 {% if not_available %}
   <div class="warnbox">{% t "此組合尚未提供，請選擇其他選項。" %}</div>
 {% endif %}
@@ -55,14 +69,16 @@
 {% if result %}
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap">
-    <h2 style="margin:0">{{ result.system }}</h2>
+    <h2 style="margin:0">{{ result.label }}</h2>
     <div style="display:flex; gap:8px; flex-wrap:wrap">
       {% if fb_quote_save_url %}<button type="button" class="btn secondary" id="quote-btn">{% t "另存為報價" %}</button>{% endif %}
       <a class="btn" id="export-btn" href="{% url 'calculator_export' %}?{{ request.GET.urlencode }}">{% t "匯出 Excel" %}{% if can_see_price %}{% t "（包括價錢）" %}{% else %}{% t "（只有材料）" %}{% endif %}</a>
     </div>
   </div>
   <p class="muted" style="margin:0">
-    F.R.R. {{ result.system.frr_label }} · {% t "測試報告" %} {{ result.system.report_no }} · {% t "系統總厚度" %} {{ result.system.overall_thickness_mm }}mm ·
+    F.R.R. {{ result.system.frr_label }} · {% t "測試報告" %} {{ result.system.report_no }} ·
+    {% if result.system.overall_thickness_mm %}{% t "系統總厚度" %} {{ result.system.overall_thickness_mm }}mm ·{% endif %}
+    {% if result.partition %}<strong>Stud：{% if result.stud %}{{ result.stud }}{% else %}{% t "材料表沒有合用的槽鐵" %}{% endif %}</strong> ·{% endif %}
     {% if can_see_price %}{% t "價錢日期" %} {{ result.on_date|date:"Y-m-d" }}{% endif %}
     {% if result.area %} · <strong>{% t "總面積" %} {{ result.area|floatformat:2 }} m²</strong>{% endif %}<br>
     {% t "圖則：" %}{{ result.system.drawing_ref }}
@@ -161,6 +177,8 @@
 {% endif %}
 
 {{ availability|json_script:"availability" }}
+{{ partition_choices|json_script:"partition-choices" }}
+{{ partition_types|json_script:"partition-types" }}
 <script>
 (function () {
   const avail = JSON.parse(document.getElementById("availability").textContent);
@@ -168,6 +186,30 @@
   const type = document.getElementById("system_type");
   const hours = document.getElementById("hours");
   const NA = " {% filter escapejs %}{% t "（尚未提供）" %}{% endfilter %}";
+  // Partition：牆高選項按品牌、系統、耐火時間和屈服強度
+  const pchoices = JSON.parse(document.getElementById("partition-choices").textContent);
+  const ptypes = JSON.parse(document.getElementById("partition-types").textContent);
+  const stress = document.getElementById("stress");
+  const height = document.getElementById("height");
+  let wantHeight = height.dataset.selected;
+
+  function refreshPartition() {
+    const isPart = ptypes.includes(type.value);
+    document.querySelectorAll(".partition-only").forEach(function (el) { el.hidden = !isPart; });
+    stress.disabled = height.disabled = !isPart;      // 不是 Partition 時不送出
+    height.required = isPart;
+    const keep = height.value || wantHeight;
+    while (height.options.length > 1) height.remove(1);
+    const list = ((((pchoices[brand.value] || {})[type.value] || {})[hours.value] || {})[stress.value]) || [];
+    for (const mm of list) {
+      const o = document.createElement("option");
+      o.value = String(mm);
+      o.textContent = (mm / 1000).toFixed(mm % 100 ? 2 : 1) + " m";
+      height.appendChild(o);
+    }
+    height.value = list.map(String).includes(keep) ? keep : "";
+    wantHeight = "";
+  }
 
   function refresh() {
     const byType = avail[brand.value] || {};
@@ -195,9 +237,12 @@
     });
   });
   {% endif %}
-  brand.addEventListener("change", refresh);
-  type.addEventListener("change", refresh);
+  brand.addEventListener("change", function () { refresh(); refreshPartition(); });
+  type.addEventListener("change", function () { refresh(); refreshPartition(); });
+  hours.addEventListener("change", refreshPartition);
+  stress.addEventListener("change", refreshPartition);
   refresh();
+  refreshPartition();
 })();
 </script>
 {% if adjust_data %}
@@ -473,7 +518,8 @@
       return o;
     });
     return JSON.stringify({
-      brand: D.brand, system_type: D.system_type, hours: D.hours, view: D.view, area: D.area, lines: lines });
+      brand: D.brand, system_type: D.system_type, hours: D.hours, view: D.view, area: D.area,
+      height: D.height, stress: D.stress, lines: lines });
   }
 
   // 有調整時，匯出改用「調整後」的內容（POST，不經網址）

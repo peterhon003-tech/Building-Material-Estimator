@@ -10,6 +10,11 @@ from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 AREA = "AREA"
 SPACING = "SPACING"
 FIXED = "FIXED"
+# Partition（按牆高計，見 partition.py；材料按報告 stud 表自動揀）
+STUD = "STUD"        # stud：按 stud 表揀槽鐵，每 m² = 1 ÷ 間距 ÷ 每支長度
+TRACK = "TRACK"      # 頂底槽：用和 stud 相同的槽鐵，每 m² = 2 ÷ 牆高 ÷ 每支長度
+ANCHOR = "ANCHOR"    # 頂底槽的膨脹螺栓：每 m² = 2 ÷ 間距 ÷ 牆高
+HEIGHT_METHODS = {STUD, TRACK, ANCHOR}
 
 CENT = Decimal("0.01")
 QTY_PLACES = Decimal("0.0001")

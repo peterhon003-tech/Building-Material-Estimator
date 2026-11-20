@@ -50,11 +50,14 @@ def record(user, result, params, now=None):
         return None
     now = now or timezone.now()
     system = result.system
+    part = getattr(result, "partition", None)
+    label = getattr(result, "label", str(system))
     key = {"user": user, "brand": system.brand, "system_type": system.system_type,
            "fire_rating_hours": system.fire_rating_hours, "area": result.area,
-           "view_mode": params.get("view", "price")}
+           "view_mode": params.get("view", "price"), "system_label": label[:200]}
     values = {
-        "created_at": now, "system_label": str(system), "report_no": system.report_no,
+        "created_at": now, "report_no": system.report_no,
+        "options": {"height": part.height_mm, "stress": part.stress} if part else {},
         "include_prices": result.include_prices,
         "total_per_sqm": result.total if result.include_prices else None,
         "grand_total": result.grand_total if (result.include_prices and result.area) else None,

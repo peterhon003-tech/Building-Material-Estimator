@@ -98,8 +98,11 @@ class MaterialPrice(models.Model):
 
 class FireSystem(models.Model):
     BRAND_CHOICES = [("PROMAT", "Promat"), ("DURASTEEL", "Durasteel")]
-    # 編號不變（舊的 1 = Enclosure 現在是 Enclosure for Ceiling），下拉選單按這個次序
-    TYPE_CHOICES = [(1, "Enclosure for Ceiling"), (3, "Enclosure for Gas Pipe"), (2, "Partition")]
+    # 編號不變（舊的 1 = Enclosure 現在是 Enclosure for Ceiling；2 = Partition 現在是 Partition Promat-H），
+    # 下拉選單按這個次序
+    TYPE_CHOICES = [(1, "Enclosure for Ceiling"), (3, "Enclosure for Gas Pipe"),
+                    (4, "Partition Promina"), (2, "Partition Promat-H")]
+    PARTITION_TYPES = (2, 4)          # 要選牆高和 stud 屈服強度
     HOURS_CHOICES = [(1, tl("1 小時")), (2, tl("2 小時")), (4, tl("4 小時"))]
 
     brand = models.CharField(tl("品牌"), max_length=20, choices=BRAND_CHOICES)
@@ -111,6 +114,11 @@ class FireSystem(models.Model):
     overall_thickness_mm = models.PositiveIntegerField(tl("系統總厚度 (mm)"), null=True, blank=True)
     active = models.BooleanField(tl("啟用"), default=True)
     notes = models.TextField(tl("備註"), blank=True)
+    partition_heights = models.JSONField(
+        tl("牆高選項 (mm)"), default=dict, blank=True,
+        help_text=tl('只用於 Partition：每個屈服強度的牆高選項，例如 {"350": [3300, 4000], "200": [3100, 4000]}；'
+                     '留空就用 stud 表的高度'),
+    )
 
     class Meta:
         ordering = ["brand", "system_type", "fire_rating_hours"]
@@ -125,12 +133,54 @@ class FireSystem(models.Model):
     def __str__(self):
         return f"{self.get_brand_display()} · {self.get_system_type_display()} · {self.get_fire_rating_hours_display()}"
 
+    @property
+    def is_partition(self):
+        return self.system_type in self.PARTITION_TYPES
+
+    def stud_table(self):
+        """stud 表（partition.StudRule 清單）。"""
+        from .partition import StudRule
+        return [StudRule(r.yield_stress, r.web_mm, r.flange_mm, r.thickness_mm, r.max_height_mm)
+                for r in self.stud_rules.all()]
+
+    def height_options(self, stress):
+        """牆高選項 (mm)：有設定就用設定，否則用 stud 表內的高度。"""
+        raw = (self.partition_heights or {}).get(str(stress))
+        if raw:
+            return sorted({int(h) for h in raw})
+        return sorted({r.max_height_mm for r in self.stud_rules.all() if r.yield_stress == stress})
+
+
+class StudRule(models.Model):
+    """Partition 測試報告的 stud 表：每種 stud（web × flange × 厚度）在某屈服強度下可做的最高牆高。"""
+    STRESS_CHOICES = [(350, "350 N/mm²"), (200, "200 N/mm²")]
+
+    system = models.ForeignKey(FireSystem, on_delete=models.CASCADE, related_name="stud_rules",
+                               verbose_name=tl("系統"))
+    yield_stress = models.PositiveSmallIntegerField(tl("屈服強度 (N/mm²)"), choices=STRESS_CHOICES)
+    web_mm = models.DecimalField("Web (mm)", max_digits=6, decimal_places=1)
+    flange_mm = models.DecimalField("Flange (mm)", max_digits=6, decimal_places=1)
+    thickness_mm = models.DecimalField(tl("厚度 (mm)"), max_digits=4, decimal_places=2)
+    max_height_mm = models.PositiveIntegerField(tl("最高牆高 (mm)"))
+
+    class Meta:
+        ordering = ["system", "-yield_stress", "web_mm", "thickness_mm"]
+        verbose_name = tl("Stud 表")
+        verbose_name_plural = tl("Stud 表")
+
+    def __str__(self):
+        return f"{self.yield_stress} N/mm² · {self.web_mm.normalize():f}×{self.flange_mm.normalize():f}×" \
+               f"{self.thickness_mm.normalize():f}mm ≤ {self.max_height_mm}mm"
+
 
 class SystemComponent(models.Model):
     METHOD_CHOICES = [
         (calc.AREA, tl("按面積")),
         (calc.SPACING, tl("按間距")),
         (calc.FIXED, tl("固定數量")),
+        (calc.STUD, tl("Stud（按牆高揀）")),
+        (calc.TRACK, tl("頂底槽（按牆高）")),
+        (calc.ANCHOR, tl("頂底槽螺栓（按牆高）")),
     ]
 
     system = models.ForeignKey(

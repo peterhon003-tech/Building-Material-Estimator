@@ -22,6 +22,7 @@ class CalcRecord(models.Model):
     grand_total = models.DecimalField(tl("合計"), max_digits=16, decimal_places=2, null=True, blank=True)
     language = models.CharField(tl("語言"), max_length=10, blank=True)
     lines = models.JSONField(tl("明細"), default=list)
+    options = models.JSONField(tl("計算選項"), default=dict, blank=True)   # Partition：{"height": mm, "stress": N/mm²}
 
     class Meta:
         ordering = ["-created_at"]
@@ -40,4 +41,7 @@ class CalcRecord(models.Model):
             q["area"] = f"{self.area}"
         if self.view_mode == "material":
             q["view"] = "material"
+        for k in ("height", "stress"):
+            if (self.options or {}).get(k):
+                q[k] = self.options[k]
         return urlencode(q)

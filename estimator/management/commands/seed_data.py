@@ -9,8 +9,9 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from estimator.audit import log_created
-from estimator.models import FireSystem, Material, MaterialLog, MaterialPrice, SystemComponent
+from estimator.models import FireSystem, Material, MaterialLog, MaterialPrice, StudRule, SystemComponent
 from estimator.seed import COMPONENTS_EN, DRAWING, MATERIALS, MATERIALS_EN, NOTES_EN, SYSTEMS, UNITS_EN
+from estimator.seed_partition import PARTITIONS, required_codes
 
 ESTIMATOR_GROUP = "估價員"
 ESTIMATOR_PERMS = ["view_material", "view_materialprice"]
@@ -24,6 +25,42 @@ def _dec(v):
 
 class Command(BaseCommand):
     help = "載入初始材料、價錢、系統配方（只新增，不覆蓋）"
+
+    def _seed_partitions(self, verbosity=1):
+        """Partition 系統：只建立未有的系統；所需材料未齊就略過（請先匯入材料，下次啟動再建立）。"""
+        created_n = 0
+        for spec in PARTITIONS:
+            exists = FireSystem.objects.filter(brand=spec["brand"], system_type=spec["system_type"],
+                                               fire_rating_hours=spec["fire_rating_hours"]).exists()
+            if exists:
+                continue
+            codes = required_codes(spec)
+            found = {m.code: m for m in Material.objects.filter(code__in=codes)}
+            missing = [c for c in codes if c not in found]
+            label = f"{dict(FireSystem.TYPE_CHOICES)[spec['system_type']]} {spec['fire_rating_hours']}hr"
+            if missing:
+                if verbosity > 0:
+                    self.stdout.write(self.style.WARNING(
+                        f"未建立 {label}：缺少材料 {', '.join(missing)}（匯入後重新啟動即會建立）"))
+                continue
+            system = FireSystem.objects.create(
+                brand=spec["brand"], system_type=spec["system_type"],
+                fire_rating_hours=spec["fire_rating_hours"], frr_label=spec["frr_label"],
+                report_no=spec["report_no"], drawing_ref=spec["drawing_ref"], notes=spec["notes"],
+                partition_heights=spec["heights"],
+            )
+            for stress, web, flange, t, h in spec["rules"]:
+                StudRule.objects.create(system=system, yield_stress=stress, web_mm=Decimal(web),
+                                        flange_mm=Decimal(flange), thickness_mm=Decimal(t), max_height_mm=h)
+            for item, desc, desc_en, mcode, method, layers, spacing, fixed, waste, note, note_en \
+                    in spec["components"]:
+                SystemComponent.objects.create(
+                    system=system, item_no=item, description=desc, description_en=desc_en,
+                    material=found[mcode], method=method, layers=layers, spacing_m=_dec(spacing),
+                    fixed_qty_per_sqm=_dec(fixed), wastage_pct=Decimal(waste), note=note, note_en=note_en,
+                )
+            created_n += 1
+        return created_n
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -65,6 +102,8 @@ class Command(BaseCommand):
                     method=method, layers=layers, spacing_m=_dec(spacing),
                     fixed_qty_per_sqm=_dec(fixed), wastage_pct=Decimal(waste), note=note,
                 )
+
+        new_s += self._seed_partitions(options.get("verbosity", 1))
 
         # 英文名稱：只填空白的欄位，不覆蓋管理員已修改的內容
         new_en = 0

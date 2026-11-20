@@ -84,7 +84,7 @@ def _new_item(quote, **fields):
     return QuotationItem.objects.create(quotation=quote, position=last + 1, **fields)
 
 
-def add_item_from_rows(quote, user, system, area, rows, include_prices, title="", t=tr):
+def add_item_from_rows(quote, user, system, area, rows, include_prices, title="", t=tr, label=None):
     """由計價頁（可能已臨時調整）送來的明細建立一個項目。
 
     數字一律由伺服器按送來的用量和單價重新計算；include_prices=False 時忽略所有價錢。
@@ -94,7 +94,7 @@ def add_item_from_rows(quote, user, system, area, rows, include_prices, title=""
     with transaction.atomic():
         item = _new_item(
             quote, title=(title or "").strip()[:200], brand=system.brand, system_type=system.system_type,
-            fire_rating_hours=system.fire_rating_hours, system_label=str(system)[:200],
+            fire_rating_hours=system.fire_rating_hours, system_label=(label or str(system))[:200],
             frr_label=system.frr_label, report_no=system.report_no, area=area,
             include_prices=include_prices, adjusted=adjusted,
             price_date=date.today() if include_prices else None,

@@ -9,7 +9,8 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
 from . import audit
-from .models import FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, SystemComponent, UserProfile
+from .models import (FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, StudRule, SystemComponent,
+                     UserProfile)
 
 PRICE_FIELDS = ["unit_price", "supplier", "effective_date", "note", "updated_by", "created_at"]
 
@@ -119,11 +120,17 @@ class SystemComponentInline(admin.TabularInline):
     autocomplete_fields = ["material"]
 
 
+class StudRuleInline(admin.TabularInline):
+    """Partition：測試報告的 stud 表（每種 stud 可做的最高牆高）。"""
+    model = StudRule
+    extra = 0
+
+
 @admin.register(FireSystem)
 class FireSystemAdmin(admin.ModelAdmin):
     list_display = ["__str__", "frr_label", "report_no", "overall_thickness_mm", "active"]
     list_filter = ["brand", "system_type", "fire_rating_hours", "active"]
-    inlines = [SystemComponentInline]
+    inlines = [SystemComponentInline, StudRuleInline]
 
 
 class UserProfileInline(admin.StackedInline):

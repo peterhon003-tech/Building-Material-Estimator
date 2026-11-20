@@ -136,13 +136,16 @@ def _source_from_calculator(request):
         raise ValueError(tr("資料格式不正確")) from None
     if not system:
         raise ValueError(tr("請先選擇有效的品牌、系統和耐火時間。"))
+    part, part_error = est_services.parse_partition(system, data.get("height"), data.get("stress"))
+    if part_error:
+        raise ValueError(part_error)
     # 價錢權限由伺服器決定：沒有權限或選了「只看材料」，送來的價錢一律忽略
     include_prices = can_see_price(request.user) and data.get("view") != "material"
     area, _ = parse_area(str(data.get("area") or ""))
     rows = data.get("lines")
     from estimator.adjust import compute_rows
     compute_rows(rows, area, include_prices, t=tr)          # 先檢查一次，有錯誤會 raise ValueError
-    return system, area, rows, include_prices
+    return system, area, rows, include_prices, est_services.system_label(system, part)
 
 
 def _source_from_record(request):
@@ -172,8 +175,8 @@ def save_to_quote(request):
                        "include_prices": include_prices,
                        "total": record.grand_total if include_prices else None}
         else:
-            system, area, rows, include_prices = _source_from_calculator(request)
-            summary = {"system": str(system), "area": area, "lines": len(rows),
+            system, area, rows, include_prices, label = _source_from_calculator(request)
+            summary = {"system": label, "area": area, "lines": len(rows),
                        "include_prices": include_prices, "total": None,
                        "adjusted": any(isinstance(r, dict) and r.get("state") in ("edited", "added") for r in rows)}
     except ValueError as e:
@@ -201,7 +204,7 @@ def save_to_quote(request):
                 services.add_item_from_record(quote, request.user, record, include_prices, title=title)
             else:
                 services.add_item_from_rows(quote, request.user, system, area, rows, include_prices,
-                                            title=title, t=tr)
+                                            title=title, t=tr, label=label)
         except ValueError as e:
             return HttpResponseBadRequest(str(e))
         if target == "new":

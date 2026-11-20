@@ -971,7 +971,7 @@ class SystemTypeTests(TestCase):
         return {l.item_no: l for l in r.lines}, r
 
     def test_type_choices_order(self):
-        self.assertEqual([v for v, _ in FireSystem.TYPE_CHOICES], [1, 3, 2])
+        self.assertEqual([v for v, _ in FireSystem.TYPE_CHOICES], [1, 3, 4, 2])
         self.assertEqual(dict(FireSystem.TYPE_CHOICES)[1], "Enclosure for Ceiling")
 
     def test_ceiling_steel_quantities(self):
@@ -1273,3 +1273,147 @@ class SortingTests(TestCase):
         self.assertContains(resp, 'id="price-table" data-multisort="client"')
         self.assertContains(resp, 'data-sort="price"')
         self.assertContains(resp, "window.MultiSort")
+
+
+# ---------- Partition（按牆高揀 stud） ----------
+
+class StudPickerTests(TestCase):
+    """partition.py：純計算，不用數據庫。"""
+
+    @staticmethod
+    def _mat(code, spec, coverage="2.44"):
+        from types import SimpleNamespace
+        return SimpleNamespace(code=code, spec=spec, coverage=Decimal(coverage))
+
+    def setUp(self):
+        from . import partition
+        from .seed_partition import PROMAT_H_2HR_RULES
+        self.p = partition
+        self.rules = [partition.StudRule(s, Decimal(w), Decimal(f), Decimal(t), h)
+                      for s, w, f, t, h in PROMAT_H_2HR_RULES]
+        self.mats = [
+            self._mat("CH-30x50x30x0.6", "30×50×30×0.6mm × 8尺"),
+            self._mat("CH-50x100x50x0.6", "50×100×50×0.6mm × 8尺"),
+            self._mat("CH-50x100x50x0.8", "50×100×50×0.8mm × 8尺"),
+            self._mat("CH-60x80x60x3.0", "60×80×60×3.0mm × 8尺"),
+            self._mat("CH-100x50x100x1.0", "100×50×100×1.0mm × 8尺"),
+        ]
+
+    def test_parse_channel(self):
+        size = self.p.parse_channel("50×100×50×0.6mm × 8尺")
+        self.assertEqual((size.flange, size.web, size.thickness), (50, 100, Decimal("0.6")))
+        self.assertIsNone(self.p.parse_channel("50×50×0.6mm × 8尺"))      # 角鐵格式
+        self.assertIsNone(self.p.parse_channel(""))
+
+    def test_lightest_that_fits(self):
+        # 5.5m：75×50 要 1.5mm（材料表沒有），100×50 只要 0.6mm → 揀 CH-50x100x50x0.6
+        c = self.p.pick_stud(self.rules, 350, 5500, self.mats)
+        self.assertEqual(c.material.code, "CH-50x100x50x0.6")
+        self.assertEqual(c.rule.label(), "100×50×0.6mm")
+        # 6.0m：100×50×0.6 只到 5.6m → 揀 0.8mm
+        self.assertEqual(self.p.pick_stud(self.rules, 350, 6000, self.mats).material.code, "CH-50x100x50x0.8")
+
+    def test_round_up_to_bigger_channel(self):
+        # 3.0m：要 75×50×0.6；沒有 web 75，用較大的 web 100（比 60×80×60×3.0 輕）
+        c = self.p.pick_stud(self.rules, 350, 3000, self.mats)
+        self.assertEqual(c.material.code, "CH-50x100x50x0.6")
+
+    def test_none_when_nothing_fits(self):
+        self.assertIsNone(self.p.pick_stud(self.rules, 350, 7700, self.mats))
+        needed = self.p.minimum_needed(self.rules, 350, 7700)
+        self.assertEqual(needed[0].label(), "100×50×3mm")
+
+    def test_track_and_anchor_qty(self):
+        self.assertEqual(self.p.track_qty(Decimal("4"), Decimal("2.44"), 10).quantize(Decimal("0.0001")),
+                         Decimal("0.2254"))                          # 2 ÷ 4 × 1.1 ÷ 2.44
+        self.assertEqual(self.p.anchor_qty(Decimal("4"), Decimal("0.5")), Decimal("1"))   # 2 ÷ 0.5 ÷ 4
+
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class PartitionSystemTests(TestCase):
+    """Partition Promina / Promat-H：材料齊全後 seed_data 建立系統，計價按牆高和屈服強度。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        for code, spec, cat, unit, cov in [
+            ("RW-R100-40", "40mm 100kg/m³", "ROCKWOOL", "件", "0.72"),
+            ("FX-M6-ANCHOR", "", "FIXING", "粒", "1"),
+            ("SL-PROMASEAL-A", "", "SEALANT", "支", "1"),
+            ("LB-PART-1", "", "LABOUR", "平方米", "1"),
+            ("LB-PART-2", "", "LABOUR", "平方米", "1"),
+            ("LB-PART-4", "", "LABOUR", "平方米", "1"),
+            ("CH-50x100x50x0.6", "50×100×50×0.6mm × 8尺", "CHANNEL", "支", "2.44"),
+            ("CH-50x100x50x0.8", "50×100×50×0.8mm × 8尺", "CHANNEL", "支", "2.44"),
+        ]:
+            Material.objects.create(code=code, name=code, spec=spec, category=cat, unit=unit,
+                                    coverage=Decimal(cov))
+        m = Material.objects.get(code="CH-50x100x50x0.6")
+        MaterialPrice.objects.create(material=m, unit_price=Decimal("25"), effective_date=date(2025, 1, 7))
+        m = Material.objects.get(code="LB-PART-2")
+        MaterialPrice.objects.create(material=m, unit_price=Decimal("750"), effective_date=date(2026, 11, 19))
+        call_command("seed_data", verbosity=0)
+        cls.user = User.objects.create_user("part_est", password="pw-12345-x")
+        cls.user.groups.add(Group.objects.get(name="估價員"))
+
+    def test_systems_created(self):
+        self.assertEqual(FireSystem.objects.filter(system_type=4).count(), 2)      # Promina 1、2 小時
+        self.assertEqual(FireSystem.objects.filter(system_type=2).count(), 3)      # Promat-H 1、2、4 小時
+        s = services.find_system("PROMAT", 4, 1)
+        self.assertEqual(s.height_options(350), [3300, 4000, 5000, 6000, 7000])
+        self.assertEqual(s.height_options(200), [3100, 4000, 5000, 6000, 7000])
+        labour = s.components.get(material__category="LABOUR")
+        self.assertEqual(labour.material.code, "LB-PART-1")                       # 1 小時人工
+        seed_again = FireSystem.objects.count()
+        call_command("seed_data", verbosity=0)
+        self.assertEqual(FireSystem.objects.count(), seed_again)                  # 不會重複建立
+
+    def test_calculate_promat_h_2hr(self):
+        s = services.find_system("PROMAT", 2, 2)
+        part, err = services.parse_partition(s, "5000", "350")
+        self.assertEqual(err, "")
+        r = services.calculate(s, part=part, area=Decimal("100"))
+        lines = {l.item_no: l for l in r.lines}
+        self.assertEqual(lines[4].code, "CH-50x100x50x0.6")                       # stud
+        self.assertEqual(lines[4].qty, Decimal("0.7390"))                         # 1 ÷ 0.61 × 1.1 ÷ 2.44 = 0.73905
+        self.assertEqual(lines[5].code, "CH-50x100x50x0.6")                       # 頂底槽同一款
+        self.assertEqual(lines[5].qty, Decimal("0.1803"))                         # 2 ÷ 5 × 1.1 ÷ 2.44
+        self.assertEqual(lines[6].qty, Decimal("0.8000"))                         # 2 ÷ 0.5 ÷ 5
+        self.assertEqual(lines[9].cost, Decimal("750.00"))
+        self.assertEqual(lines[7].qty, Decimal("16.4000"))                        # M4 螺絲按報告間距估算
+        self.assertIsNone(lines[8].qty)                                           # 防火膠：待定
+        self.assertIn("牆高 5 m", r.label)
+        self.assertIn("CH-50x100x50x0.6", r.stud + lines[4].code)
+
+    def test_no_fitting_stud_is_pending(self):
+        s = services.find_system("PROMAT", 2, 4)
+        part, _ = services.parse_partition(s, "7700", "350")
+        r = services.calculate(s, part=part)
+        lines = {l.item_no: l for l in r.lines}
+        self.assertIsNone(lines[3].qty)
+        self.assertEqual(lines[3].code, "")
+        self.assertIn("150×50×2mm", lines[3].note)
+        self.assertIn(lines[3], r.pending_lines)
+
+    def test_parse_partition_errors(self):
+        s = services.find_system("PROMAT", 4, 2)
+        self.assertEqual(services.parse_partition(s, "", "350")[1], "請選擇牆高。")
+        self.assertTrue(services.parse_partition(s, "4500", "350")[1])           # 不在選項內
+        self.assertEqual(services.parse_partition(s, "3100", "999")[1], "牆高不在這個系統的選項內，請重新選擇。")
+        self.assertEqual(services.parse_partition(services.find_system("PROMAT", 1, 2), "", "")[0], None)
+
+    def test_calculator_page_and_export(self):
+        self.client.force_login(self.user)
+        params = {"brand": "PROMAT", "system_type": "4", "hours": "2", "height": "4000", "stress": "350",
+                  "area": "50"}
+        resp = self.client.get(reverse("calculator"), params)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context["result"].partition.height_mm, 4000)
+        self.assertEqual(resp.context["adjust_data"]["height"], 4000)
+        self.assertEqual(resp.context["partition_choices"]["PROMAT"]["4"]["2"]["200"][0], 3100)
+        resp = self.client.get(reverse("calculator"), {**params, "height": ""})
+        self.assertIsNone(resp.context["result"])
+        self.assertContains(resp, "請選擇牆高。")
+        resp = self.client.get(reverse("calculator_export"), params)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("H4000-350", resp["Content-Disposition"])
