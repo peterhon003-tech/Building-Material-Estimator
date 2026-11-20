@@ -1476,6 +1476,20 @@ class FormulaTests(TestCase):
         for text in formula.DEFAULT.values():                 # 換成英文後計法不變
             self.assertEqual(formula.localize(formula.localize(text, True), False), text)
 
+    def test_power_and_percent(self):
+        """^ 次方、% 百分比：先括號，再 %，再 ^，再 * /，最後 + -。"""
+        from . import formula
+        v = {"層數": 2, "涵蓋量": Decimal("4"), "損耗": Decimal("10")}
+        cases = {"3^2": 9, "10%": Decimal("0.1"), "2^3^2": 512, "-3^2": -9, "(-3)^2": 9, "2^-1": Decimal("0.5"),
+                 "2*3^2": 18, "(1+2)^2": 9, "層數^2+1": 5, "損耗%": Decimal("0.1"), "50%*層數": 1,
+                 "層數/涵蓋量*(1+損耗%)": Decimal("0.55"), "３＾２": 9, "１０％": Decimal("0.1")}
+        for text, expected in cases.items():
+            self.assertEqual(formula.evaluate(text, v), Decimal(expected), text)
+        self.assertEqual(calc.round_qty(formula.evaluate("4^0.5", v)), 2)
+        self.assertEqual(formula.evaluate("層數/涵蓋量*(1+損耗%)", v), formula.evaluate(formula.DEFAULT[calc.AREA], v))
+        for bad in ["^2", "2^", "%3", "2^^3", "3%2", "0^-1", "(-8)^0.5"]:
+            self.assertTrue(formula.validate(bad), bad)
+
     def test_x_is_not_multiply(self):
         from . import formula
         for bad in ["層數x2 / 涵蓋量", "層數 x 2"]:

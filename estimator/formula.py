@@ -4,8 +4,10 @@
 公式計出的是「每 m² 用量」（以材料的計價單位計，例如張、支、件、粒、m²）。
 
 寫法和一般數學算式一樣：
-  符號      + 加、- 減、* 乘、/ 除、( ) 括號；空格可有可無
-  次序      先括號，再 * /，最後 + -；同級由左至右
+  符號      + 加、- 減、* 乘、/ 除、^ 次方、% 百分比、( ) 括號；空格可有可無
+            例如 3^2 = 9、10% = 0.1、損耗% = 損耗 ÷ 100
+  次序      先括號，再 %，再 ^（由右至左，2^3^2 = 2^9），再 * /，最後 + -；同級由左至右
+            -3^2 = -9（和一般數學一樣，先計次方）
   數字      例如 2、0.61、100
   函數      最大(a, b)、最小(a, b)
   變數（中文繁體、簡體或英文都可以，英文不分大小寫）
@@ -22,7 +24,7 @@
 """
 import re
 import unicodedata
-from decimal import Decimal, DivisionByZero, InvalidOperation
+from decimal import Decimal
 
 from . import calc
 
@@ -45,7 +47,8 @@ ENGLISH = {"層數": "layers", "涵蓋量": "coverage", "間距": "spacing", "�
            "損耗": "wastage", "牆高": "height", "最大": "max", "最小": "min"}
 _EN_INPUT = {**{v: k for k, v in ENGLISH.items()}, "qty_per_sqm": "每平方米數量"}
 _WORD = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
-_OPERATORS = {"+": "+", "-": "-", "*": "*", "/": "/", "×": "*", "÷": "/", "(": "(", ")": ")", ",": ","}
+_OPERATORS = {"+": "+", "-": "-", "*": "*", "/": "/", "×": "*", "÷": "/", "(": "(", ")": ")", ",": ",",
+              "^": "^", "%": "%"}
 
 DEFAULT = {
     calc.AREA: "層數 / 涵蓋量 * (1 + 損耗 / 100)",
@@ -188,11 +191,27 @@ class _Parser:
 
     def factor(self):
         kind, v = self.peek()
-        if kind == "op" and v in "+-":
+        if kind == "op" and v in ("+", "-"):
             self.take()
             inner = self.factor()
             return ("neg", inner) if v == "-" else inner
-        return self.primary()
+        return self.power()
+
+    def power(self):
+        """a ^ b：由右至左；指數可以有正負號，例如 2^-1。"""
+        node = self.postfix()
+        if self.peek() == ("op", "^"):
+            self.take()
+            node = ("bin", "^", node, self.factor())
+        return node
+
+    def postfix(self):
+        """a%：即 a ÷ 100。"""
+        node = self.primary()
+        while self.peek() == ("op", "%"):
+            self.take()
+            node = ("pct", node)
+        return node
 
     def primary(self):
         kind, v = self.take()
@@ -245,6 +264,8 @@ def _eval(node, values):
         return Decimal(str(v))
     if kind == "neg":
         return -_eval(node[1], values)
+    if kind == "pct":
+        return _eval(node[1], values) / 100
     if kind == "call":
         a, b = _eval(node[2], values), _eval(node[3], values)
         return max(a, b) if node[1] == "max" else min(a, b)
@@ -256,6 +277,12 @@ def _eval(node, values):
         return a - b
     if op == "*":
         return a * b
+    if op == "^":
+        if a == 0 and b < 0:
+            raise ZeroDivisionError
+        if b == b.to_integral_value() and abs(b) <= 1000:
+            return a ** int(b)                     # 整數次方：準確
+        return a ** b                               # 例如 4^0.5 = 2；負數的小數次方 → 計不到
     if b == 0:
         raise ZeroDivisionError
     return a / b
@@ -265,8 +292,9 @@ def evaluate(text, values):
     """計算公式。values 的鍵是中文變數名稱。用到的變數沒有數值（None）或除以 0 → 傳回 None（待定）。"""
     tree = _parse(text)
     try:
-        return _eval(tree, values)
-    except (_Missing, DivisionByZero, InvalidOperation, ZeroDivisionError):
+        result = _eval(tree, values)
+        return result if result.is_finite() else None
+    except (_Missing, ArithmeticError):
         return None
 
 
