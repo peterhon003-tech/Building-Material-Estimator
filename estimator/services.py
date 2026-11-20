@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
-from . import calc, partition
+from . import calc, formula, partition
 from .i18n import tr
 from .models import FireSystem, Material
 
@@ -134,6 +134,8 @@ def _basis(c, coverage, unit, ctx=None):
     """計算依據的文字，按目前語言顯示。unit 已是翻譯後的單位。ctx：Partition 的計算資料。"""
     w = f"(1 + {c.wastage_pct.normalize():f}%)"
     cov = f"{coverage.normalize():f}"
+    if c.formula.strip():
+        return _custom_basis(c, coverage, ctx)
     if c.method in calc.HEIGHT_METHODS:
         return _height_basis(c, coverage, unit, ctx, w, cov)
     if c.method == calc.AREA:
@@ -195,8 +197,21 @@ def _stud_spacing(c):
     return c.spacing_m or Decimal("0.610")
 
 
+def _formula_values(c, m, ctx):
+    """公式變數的數值（中文名稱）。沒有的變數為 None（用到就變成待定）。"""
+    height = ctx.part.height_m if ctx is not None and ctx.part is not None else None
+    spacing = _stud_spacing(c) if c.method == calc.STUD else c.spacing_m
+    return {"層數": c.layers or 1, "涵蓋量": m.coverage or None, "間距": spacing,
+            "每平方米數量": c.fixed_qty_per_sqm, "損耗": c.wastage_pct or 0, "牆高": height}
+
+
 def _qty(c, m, ctx):
     """一個組件用材料 m 時的每 m² 用量（未四捨五入）。資料不足時 None。"""
+    if c.formula.strip():                       # 管理員填了自訂公式
+        try:
+            return formula.evaluate(c.formula, _formula_values(c, m, ctx))
+        except formula.FormulaError:
+            return None
     if c.method not in calc.HEIGHT_METHODS:
         return calc.qty_per_sqm(c.method, m.coverage, layers=c.layers, spacing_m=c.spacing_m,
                                 fixed_qty=c.fixed_qty_per_sqm, wastage_pct=c.wastage_pct)
@@ -208,6 +223,22 @@ def _qty(c, m, ctx):
     if c.method == calc.TRACK:
         return partition.track_qty(ctx.part.height_m, m.coverage, c.wastage_pct)
     return partition.anchor_qty(ctx.part.height_m, c.spacing_m, c.wastage_pct)
+
+
+def _custom_basis(c, coverage, ctx):
+    """自訂公式的計算依據：公式 +（用到的變數 = 數值）。"""
+    from types import SimpleNamespace
+    text = c.formula.strip()
+    try:
+        used = formula.variables_used(text)
+    except formula.FormulaError:
+        return tr("自訂公式有錯誤：{f}", f=text)
+    values = _formula_values(c, SimpleNamespace(coverage=coverage), ctx)
+    shown = text
+    for name in formula.VARIABLES:              # 英文介面時，變數名稱也翻譯
+        shown = shown.replace(name, tr(name))
+    parts = [f"{tr(k)} = {_num(values[k]) if values[k] is not None else '?'}" for k in used]
+    return tr("自訂公式：{f}", f=shown) + (f"（{'，'.join(parts)}）" if parts else "")
 
 
 def _height_basis(c, coverage, unit, ctx, w, cov):
@@ -277,7 +308,7 @@ def calculate(system, on_date=None, include_prices=True, area=None, with_options
             material=tr("未有合用的槽鐵") if no_stud else m.display_name(),
             category=str(m.get_category_display()),
             unit=unit,
-            method=str(c.get_method_display()),
+            method=str(c.get_method_display()) + (tr("（自訂公式）") if c.formula.strip() else ""),
             basis=_basis(c, m.coverage, unit, ctx),
             qty=calc.round_qty(qty),
             unit_price=unit_price,

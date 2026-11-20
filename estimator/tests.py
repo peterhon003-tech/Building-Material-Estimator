@@ -1417,3 +1417,78 @@ class PartitionSystemTests(TestCase):
         resp = self.client.get(reverse("calculator_export"), params)
         self.assertEqual(resp.status_code, 200)
         self.assertIn("H4000-350", resp["Content-Disposition"])
+
+
+# ---------- 組件自訂公式 ----------
+
+class FormulaTests(TestCase):
+    """formula.py：預設公式要和原本的計法一樣；不安全或錯誤的公式要拒絕。"""
+
+    def test_defaults_match_calc(self):
+        from . import formula
+        v = {"層數": 2, "涵蓋量": Decimal("2.9768"), "間距": Decimal("0.61"), "每平方米數量": Decimal("16.4"),
+             "損耗": Decimal("10"), "牆高": Decimal("5")}
+        q = lambda f, **kw: calc.round_qty(formula.evaluate(formula.DEFAULT[f], {**v, **kw}))
+        self.assertEqual(q(calc.AREA), calc.round_qty(calc.qty_per_sqm(calc.AREA, Decimal("2.9768"), layers=2,
+                                                                       wastage_pct=10)))
+        self.assertEqual(q(calc.SPACING, 涵蓋量=Decimal("2.44")),
+                         calc.round_qty(calc.qty_per_sqm(calc.SPACING, Decimal("2.44"), spacing_m=Decimal("0.61"),
+                                                         wastage_pct=10)))
+        self.assertEqual(q(calc.FIXED), Decimal("18.0400"))
+        self.assertEqual(q(calc.TRACK, 涵蓋量=Decimal("2.44")), Decimal("0.1803"))
+        self.assertEqual(q(calc.ANCHOR, 間距=Decimal("0.5"), 損耗=0), Decimal("0.8000"))
+
+    def test_rejects_unsafe_or_wrong(self):
+        from . import formula
+        for bad in ["__import__('os')", "層數 ** 2", "abc + 1", "(層數", "最大 + 1", ""]:
+            self.assertTrue(formula.validate(bad), bad)
+        self.assertEqual(formula.validate("2 ÷ 牆高", allow_height=False), "只有 Partition 系統才可以用「牆高」。")
+        self.assertEqual(formula.validate("最大(層數, 2) × 1.5 ÷ 涵蓋量"), "")
+
+    def test_missing_value_is_pending(self):
+        from . import formula
+        self.assertIsNone(formula.evaluate("每平方米數量 × 2", {"每平方米數量": None}))
+        self.assertIsNone(formula.evaluate("1 ÷ 間距", {"間距": Decimal("0")}))
+
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class ComponentFormulaTests(TestCase):
+    """系統組件填了自訂公式，計價就用自訂公式；錯誤公式不能儲存。"""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+
+    def _board(self):
+        s = services.find_system("PROMAT", 1, 1)
+        return s, s.components.filter(method=calc.AREA).select_related("material").first()
+
+    def test_custom_formula_used(self):
+        s, c = self._board()
+        pick = lambda r: next(l for l in r.lines if l.item_no == c.item_no and l.description == c.description)
+        before = pick(services.calculate(s))
+        c.formula = "層數 × 2 ÷ 涵蓋量"
+        c.full_clean()
+        c.save()
+        line = pick(services.calculate(s))
+        expected = calc.round_qty(Decimal(c.layers) * 2 / c.material.coverage)
+        self.assertEqual(line.qty, expected)
+        self.assertNotEqual(line.qty, before.qty)
+        self.assertIn("自訂公式：層數 × 2 ÷ 涵蓋量", line.basis)
+        self.assertIn("（自訂公式）", line.method)
+        c.formula = ""
+        c.save()
+        self.assertEqual(pick(services.calculate(s)).qty, before.qty)
+
+    def test_invalid_formula_not_saved(self):
+        from django.core.exceptions import ValidationError
+        s, c = self._board()
+        for bad in ["層數 ÷ 牆高", "import os"]:
+            c.formula = bad
+            with self.assertRaises(ValidationError):
+                c.full_clean()
+
+    def test_default_formula_shown(self):
+        s, c = self._board()
+        self.assertEqual(c.default_formula(), "層數 ÷ 涵蓋量 × (1 + 損耗 ÷ 100)")
+        self.assertEqual(c.active_formula(), c.default_formula())

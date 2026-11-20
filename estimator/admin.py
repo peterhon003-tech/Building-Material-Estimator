@@ -9,6 +9,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
 from . import audit
+from .i18n import tl, tr
 from .models import (FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, StudRule, SystemComponent,
                      UserProfile)
 
@@ -118,6 +119,17 @@ class SystemComponentInline(admin.TabularInline):
     model = SystemComponent
     extra = 0
     autocomplete_fields = ["material"]
+    fields = ["item_no", "description", "description_en", "material", "method", "layers", "spacing_m",
+              "fixed_qty_per_sqm", "wastage_pct", "default_formula_display", "formula", "note", "note_en"]
+    readonly_fields = ["default_formula_display"]
+
+    @admin.display(description=tl("預設公式"))
+    def default_formula_display(self, obj):
+        """按計算方式的預設公式（填了自訂公式就不會用）。"""
+        if obj is None or not obj.pk:
+            return "—"
+        text = obj.default_formula()
+        return f"{text}（{tr('不使用')}）" if obj.formula.strip() else text
 
 
 class StudRuleInline(admin.TabularInline):

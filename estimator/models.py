@@ -200,6 +200,11 @@ class SystemComponent(models.Model):
         help_text=tl("留空 = 待定（不計入總價）"),
     )
     wastage_pct = models.DecimalField(tl("損耗 %"), max_digits=5, decimal_places=2, default=0)
+    formula = models.CharField(
+        tl("自訂公式"), max_length=200, blank=True,
+        help_text=tl("留空 = 用預設公式。計出每 m² 用量（材料單位）。可用變數：層數、涵蓋量、間距、每平方米數量、"
+                     "損耗（%）、牆高（m，只限 Partition）；可用 + - × ÷ ( )、最大(a, b)、最小(a, b)"),
+    )
     note = models.CharField(tl("備註"), max_length=200, blank=True)
     note_en = models.CharField(tl("英文備註"), max_length=200, blank=True)
 
@@ -216,6 +221,24 @@ class SystemComponent(models.Model):
 
     def display_note(self, lang=None):
         return localized(self.note, self.note_en, lang)
+
+    def default_formula(self):
+        from .formula import default_for
+        return default_for(self.method)
+
+    def active_formula(self):
+        """實際使用的公式：有自訂公式就用自訂，否則用預設。"""
+        return self.formula.strip() or self.default_formula()
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        from .formula import validate
+        if self.formula.strip():
+            system = getattr(self, "system", None) if self.system_id else None
+            allow_height = system.is_partition if system else True
+            error = validate(self.formula, allow_height=allow_height)
+            if error:
+                raise ValidationError({"formula": tr(error)})
 
 
 class UserProfile(models.Model):
