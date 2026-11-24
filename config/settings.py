@@ -13,6 +13,22 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
+# HTTPS：網站在 Caddy 後面（docker-compose.yml 設定 FB_HTTPS=1）
+FB_HTTPS = os.environ.get("FB_HTTPS", "0") == "1"
+if FB_HTTPS:
+    # Caddy 會告訴 Django 原本的連線是 https（網站本身不對外開放，只有 Caddy 連得到）
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # 登入用的 cookie 只經加密連線傳送
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # .env 裏寫 http:// 的網址，自動加上 https:// 版本
+    CSRF_TRUSTED_ORIGINS += [o.replace("http://", "https://", 1) for o in CSRF_TRUSTED_ORIGINS
+                             if o.startswith("http://")]
+SESSION_COOKIE_HTTPONLY = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -26,6 +42,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "estimator.security_log.HostCheckMiddleware",    # 不容許的網址 → 安全事件紀錄
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -34,6 +51,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "estimator.middleware.UserLanguageMiddleware",   # 按用戶帳戶設定的語言
     "django.contrib.messages.middleware.MessageMiddleware",
+    "estimator.activity_log.ActivityLogMiddleware",   # 重要操作 → 使用紀錄
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -78,6 +96,15 @@ else:
         }
     }
 
+# 登入：同一帳戶 15 分鐘內錯 5 次 → 鎖定 15 分鐘（estimator/login_guard.py）
+AUTHENTICATION_BACKENDS = ["estimator.auth.LockoutModelBackend"]
+FB_LOGIN_MAX_FAILURES = 5
+FB_LOGIN_LOCK_MINUTES = 15
+# CSRF 驗證失敗 → 先寫入安全事件紀錄，再顯示原本的 403 頁面
+CSRF_FAILURE_VIEW = "estimator.security_log.csrf_failure"
+# 使用紀錄保留多少天
+FB_ACTIVITY_KEEP_DAYS = 365
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -107,11 +134,11 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # 自動計價紀錄：開關及保留日數
-FB_CALC_HISTORY_ENABLED = False
+FB_CALC_HISTORY_ENABLED = True
 FB_CALC_HISTORY_DAYS = 180
 
 # 報價（quotes app）：False = 停用（隱藏選單和按鈕，網址顯示 404），數據保留
-FB_QUOTES_ENABLED = False
+FB_QUOTES_ENABLED = True
 
 # 關閉瀏覽器即登出：登入用的 session cookie 不設到期日，瀏覽器關閉後就會刪除
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
@@ -119,12 +146,3 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "calculator"
 LOGOUT_REDIRECT_URL = "login"
-
-
-# 記錄 CSRF 錯誤的原因（顯示在 docker compose logs web）
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "loggers": {"django.security.csrf": {"handlers": ["console"], "level": "WARNING"}},
-}

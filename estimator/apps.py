@@ -9,4 +9,4 @@ class EstimatorConfig(AppConfig):
     verbose_name = tl("防火板計價")
 
     def ready(self):
-        from . import signals  # noqa: F401  登入時重設語言
+        from . import activity_log, login_guard, signals  # noqa: F401  語言；登入失敗次數；使用紀錄

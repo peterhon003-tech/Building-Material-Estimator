@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card" style="max-width:380px; margin:40px auto;">
   <h1>{% t "登入" %}</h1>
-  {% if form.errors %}<p class="errorlist">{% t "用戶名稱或密碼不正確，請再試。" %}</p>{% endif %}
+  {% if form.errors %}<p class="errorlist">{% if form.fb_locked %}{{ form.non_field_errors.0 }}{% else %}{% t "用戶名稱或密碼不正確，請再試。" %}{% endif %}</p>{% endif %}
   <form method="post">
     {% csrf_token %}
     <p><label>{% t "用戶名稱" %}<br>{{ form.username }}</label></p>

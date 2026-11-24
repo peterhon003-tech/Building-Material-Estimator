@@ -330,3 +330,86 @@ class MaterialLog(models.Model):
 
     def __str__(self):
         return f"{self.created_at:%Y-%m-%d %H:%M} · {self.code} · {self.get_action_display()}"
+
+
+class LoginFailure(models.Model):
+    """登入失敗紀錄：同一帳戶名稱短時間內錯太多次就暫時鎖定（見 login_guard.py）。
+    刪除某帳戶的紀錄 = 立即解除鎖定。"""
+
+    username = models.CharField(tl("帳戶名稱"), max_length=150, db_index=True)
+    ip = models.CharField(tl("IP 位址"), max_length=45, blank=True)
+    created_at = models.DateTimeField(tl("時間"), db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = tl("登入失敗紀錄")
+        verbose_name_plural = tl("登入失敗紀錄")
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} · {self.username}"
+
+
+class SecurityEvent(models.Model):
+    """安全事件紀錄：被拒絕的可疑操作（見 security_log.py）。只可查看，不可修改。"""
+
+    CSRF, HOST, DENIED, LOCKED, LOCKED_TRY = "csrf", "host", "denied", "locked", "locked_try"
+    KIND_CHOICES = [
+        (CSRF, tl("CSRF 驗證失敗")),
+        (HOST, tl("不容許的網址")),
+        (DENIED, tl("權限不足")),
+        (LOCKED, tl("帳戶被鎖定")),
+        (LOCKED_TRY, tl("鎖定期間嘗試登入")),
+    ]
+
+    created_at = models.DateTimeField(tl("時間"), db_index=True)
+    kind = models.CharField(tl("類別"), max_length=12, choices=KIND_CHOICES, db_index=True)
+    username = models.CharField(tl("帳戶名稱"), max_length=150, blank=True, db_index=True)
+    ip = models.CharField(tl("IP 位址"), max_length=45, blank=True)
+    method = models.CharField(tl("方式"), max_length=10, blank=True)
+    path = models.CharField(tl("網址"), max_length=500, blank=True)
+    origin = models.CharField("Origin", max_length=300, blank=True)
+    referer = models.CharField("Referer", max_length=500, blank=True)
+    user_agent = models.CharField(tl("瀏覽器"), max_length=300, blank=True)
+    detail = models.CharField(tl("原因"), max_length=500, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = tl("安全事件紀錄")
+        verbose_name_plural = tl("安全事件紀錄")
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} · {self.get_kind_display()}"
+
+
+class ActivityLog(models.Model):
+    """使用紀錄：誰（帳戶、IP）在甚麼時間做了甚麼重要操作（見 activity_log.py）。只可查看，不可修改。"""
+
+    LOGIN, LOGOUT, LOGIN_FAILED = "login", "logout", "login_failed"
+    CALC, EXPORT, VIEW_PRICE, PRICE, IMPORT, MATERIAL, QUOTE = (
+        "calc", "export", "view_price", "price", "import", "material", "quote")
+    ADMIN_ADD, ADMIN_CHANGE, ADMIN_DELETE, OTHER = "admin_add", "admin_change", "admin_delete", "other"
+    ACTION_CHOICES = [
+        (LOGIN, tl("登入")), (LOGOUT, tl("登出")), (LOGIN_FAILED, tl("登入失敗")),
+        (CALC, tl("計算")), (EXPORT, tl("匯出／下載")), (VIEW_PRICE, tl("查看價錢")),
+        (PRICE, tl("更新價錢")), (IMPORT, tl("Excel 匯入")), (MATERIAL, tl("新增材料")),
+        (QUOTE, tl("報價")), (ADMIN_ADD, tl("系統管理：新增")), (ADMIN_CHANGE, tl("系統管理：修改")),
+        (ADMIN_DELETE, tl("系統管理：刪除")), (OTHER, tl("其他操作")),
+    ]
+
+    created_at = models.DateTimeField(tl("時間"), db_index=True)
+    username = models.CharField(tl("帳戶名稱"), max_length=150, blank=True, db_index=True)
+    ip = models.CharField(tl("IP 位址"), max_length=45, blank=True, db_index=True)
+    action = models.CharField(tl("動作"), max_length=14, choices=ACTION_CHOICES, db_index=True)
+    method = models.CharField(tl("方式"), max_length=10, blank=True)
+    path = models.CharField(tl("網址"), max_length=500, blank=True)
+    status = models.PositiveSmallIntegerField(tl("結果"), null=True, blank=True)
+    detail = models.CharField(tl("內容"), max_length=1000, blank=True)
+    user_agent = models.CharField(tl("瀏覽器"), max_length=300, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = tl("使用紀錄")
+        verbose_name_plural = tl("使用紀錄")
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} · {self.username} · {self.get_action_display()}"

@@ -7,12 +7,13 @@
 from decimal import Decimal
 
 from django.contrib import admin
+from django.utils import timezone
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
 from . import audit
 from .i18n import tl, tr
-from .models import (FireSystem, ImportBatch, Material, MaterialLog, MaterialPrice, StudRule, SystemComponent,
+from .models import (ActivityLog, FireSystem, ImportBatch, LoginFailure, Material, SecurityEvent, MaterialLog, MaterialPrice, StudRule, SystemComponent,
                      UserProfile)
 
 PRICE_FIELDS = ["unit_price", "supplier", "effective_date", "note", "updated_by", "created_at"]
@@ -77,6 +78,82 @@ class MaterialLogAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(LoginFailure)
+class LoginFailureAdmin(admin.ModelAdmin):
+    """登入失敗紀錄：只可查看和刪除。刪除某帳戶的紀錄 = 立即解除鎖定。"""
+    list_display = ["created_at", "username", "ip"]
+    list_filter = ["created_at"]
+    search_fields = ["username"]
+    readonly_fields = ["created_at", "username", "ip"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ActivityLog)
+class ActivityLogAdmin(admin.ModelAdmin):
+    """使用紀錄：只可查看；可匯出 CSV；只有超級用戶可以刪除。"""
+    list_display = ["created_at", "username", "ip", "action", "short_detail", "status"]
+    list_filter = ["action", "created_at", "username"]
+    search_fields = ["username", "ip", "path", "detail"]
+    date_hierarchy = "created_at"
+    readonly_fields = ["created_at", "username", "ip", "action", "method", "path", "status", "detail",
+                       "user_agent"]
+    actions = ["export_csv"]
+
+    @admin.display(description=tl("內容"))
+    def short_detail(self, obj):
+        return obj.detail if len(obj.detail) <= 80 else obj.detail[:80] + "…"
+
+    @admin.action(description=tl("匯出所選紀錄（CSV）"))
+    def export_csv(self, request, queryset):
+        import csv
+        from django.http import HttpResponse
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="activity_log.csv"'
+        response.write("\ufeff")                        # Excel 正確顯示中文
+        writer = csv.writer(response)
+        writer.writerow([tr("時間"), tr("帳戶名稱"), tr("IP 位址"), tr("動作"), tr("方式"), tr("網址"),
+                         tr("結果"), tr("內容"), tr("瀏覽器")])
+        for row in queryset.order_by("created_at"):
+            writer.writerow([timezone.localtime(row.created_at).strftime("%Y-%m-%d %H:%M:%S"), row.username,
+                             row.ip, row.get_action_display(), row.method, row.path, row.status or "",
+                             row.detail, row.user_agent])
+        return response
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+
+@admin.register(SecurityEvent)
+class SecurityEventAdmin(admin.ModelAdmin):
+    """安全事件紀錄：只可查看；只有超級用戶可以刪除。"""
+    list_display = ["created_at", "kind", "username", "ip", "method", "path", "origin"]
+    list_filter = ["kind", "created_at"]
+    search_fields = ["username", "ip", "path", "origin", "referer", "detail"]
+    date_hierarchy = "created_at"
+    readonly_fields = ["created_at", "kind", "username", "ip", "method", "path", "origin", "referer",
+                       "user_agent", "detail"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
 
 
 @admin.register(ImportBatch)

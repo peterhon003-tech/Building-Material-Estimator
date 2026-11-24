@@ -20,16 +20,47 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      FB_HTTPS: "1"            # 網站在 Caddy（HTTPS）後面
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "${WEB_PORT:-8000}:8000"
+    # 不直接對外開放：所有連線都要經 Caddy（HTTPS）
+    expose:
+      - "8000"
     networks:
       - backend
+    # 網站以普通用戶 app 執行（見 Dockerfile），再拿走所有 Linux 特權
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  caddy:
+    # HTTPS 前置伺服器：同一個埠號（WEB_PORT，預設 8000），改用 https://
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      FB_SERVER_NAME: ${FB_SERVER_NAME:-127.0.0.1}
+      # 只在步驟 5（Windows Caddy）之後才設為 private_ranges，見 Caddyfile
+      FB_TRUSTED_PROXIES: ${FB_TRUSTED_PROXIES:-192.0.2.1/32}
+    ports:
+      - "${WEB_PORT:-8000}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # 憑證和私人 CA（不要刪除，否則各電腦要重新安裝根憑證）
+      - caddy_config:/config
+    networks:
+      - backend
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
 
 networks:
   backend:

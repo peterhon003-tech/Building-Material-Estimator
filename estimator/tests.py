@@ -1632,3 +1632,212 @@ class FormulaPreviewTests(TestCase):
         self.assertContains(resp, "公式用到的數值")
         self.assertContains(resp, "試算每 m² 用量")
         self.assertContains(resp, "材料數據")
+
+
+# ---------- 登入失敗次數限制 ----------
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant", FB_LOGIN_MAX_FAILURES=5, FB_LOGIN_LOCK_MINUTES=15)
+class LoginLockoutTests(TestCase):
+    """同一帳戶錯 5 次 → 鎖定 15 分鐘；鎖定期間密碼正確也不能登入；成功登入清除紀錄。"""
+
+    pw = "Correct-Horse-42"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user("lock_user", password=cls.pw)
+        cls.staff = User.objects.create_user("lock_admin", password=cls.pw, is_staff=True, is_superuser=True)
+
+    def _post(self, username, password, url=None):
+        return self.client.post(url or reverse("login"), {"username": username, "password": password})
+
+    def _fail(self, username, times):
+        for _ in range(times):
+            self._post(username, "wrong-password")
+
+    def test_locked_after_five_failures(self):
+        from .models import LoginFailure
+        self._fail("lock_user", 4)
+        self.assertEqual(self._post("lock_user", self.pw).status_code, 302)     # 4 次未鎖定，可以登入
+        self.assertFalse(LoginFailure.objects.filter(username="lock_user").exists())   # 成功登入清除紀錄
+        self.client.logout()
+        self._fail("lock_user", 5)
+        resp = self._post("lock_user", self.pw)                                  # 密碼正確也不行
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "帳戶暫時鎖定")
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertFalse(self.client.login(username="lock_user", password=self.pw))
+        self.assertEqual(LoginFailure.objects.filter(username="lock_user").count(), 5)   # 鎖定期間不再記錄
+
+    def test_unlocked_after_waiting_or_by_admin(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .models import LoginFailure
+        self._fail("lock_user", 5)
+        LoginFailure.objects.update(created_at=timezone.now() - timedelta(minutes=16))
+        self.assertEqual(self._post("lock_user", self.pw).status_code, 302)     # 15 分鐘後自動解鎖
+        self.client.logout()
+        self._fail("lock_user", 5)
+        LoginFailure.objects.filter(username="lock_user").delete()               # 管理員刪除紀錄 = 解鎖
+        self.assertEqual(self._post("lock_user", self.pw).status_code, 302)
+
+    def test_username_case_and_other_users(self):
+        self._fail("LOCK_USER", 5)
+        self.assertContains(self._post("lock_user", self.pw), "帳戶暫時鎖定")
+        self.assertEqual(self._post("lock_admin", self.pw).status_code, 302)    # 其他帳戶不受影響
+
+    def test_admin_login_also_locked(self):
+        self._fail("lock_admin", 5)
+        resp = self._post("lock_admin", self.pw, url=reverse("admin:login"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "帳戶暫時鎖定")
+
+    def test_failure_admin_page(self):
+        self._fail("lock_user", 2)
+        self.client.force_login(self.staff)
+        resp = self.client.get(reverse("admin:estimator_loginfailure_changelist"))
+        self.assertContains(resp, "lock_user")
+
+    def test_real_ip_recorded(self):
+        """經 Windows Caddy 連入：記錄 X-Forwarded-For 的第一個 IP（同事的真正 IP）。"""
+        from .models import LoginFailure
+        self.client.post(reverse("login"), {"username": "lock_user", "password": "wrong"},
+                         HTTP_X_FORWARDED_FOR="192.168.0.35, 172.18.0.1")
+        self.assertEqual(LoginFailure.objects.get(username="lock_user").ip, "192.168.0.35")
+
+
+# ---------- 安全事件紀錄 ----------
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant", FB_LOGIN_MAX_FAILURES=5, FB_LOGIN_LOCK_MINUTES=15)
+class SecurityEventTests(TestCase):
+    pw = "Correct-Horse-42"
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.viewer = User.objects.create_user("sec_viewer", password=cls.pw)
+        cls.admin = User.objects.create_user("sec_admin", password=cls.pw, is_staff=True, is_superuser=True)
+
+    def _events(self, kind):
+        from .models import SecurityEvent
+        return SecurityEvent.objects.filter(kind=kind)
+
+    def test_csrf_failure_recorded_with_origin(self):
+        from django.test import Client
+        c = Client(enforce_csrf_checks=True)
+        resp = c.post(reverse("login"), {"username": "sec_viewer", "password": self.pw},
+                      HTTP_ORIGIN="http://abc-offer.com", HTTP_X_FORWARDED_FOR="192.168.0.77")
+        self.assertEqual(resp.status_code, 403)
+        e = self._events("csrf").get()
+        self.assertEqual(e.origin, "http://abc-offer.com")
+        self.assertEqual(e.ip, "192.168.0.77")
+        self.assertEqual(e.method, "POST")
+        self.assertTrue(e.detail)                                    # Django 的拒絕原因
+        c.post(reverse("login"), {"username": "x"}, HTTP_ORIGIN="http://abc-offer.com",
+               HTTP_X_FORWARDED_FOR="192.168.0.77")
+        self.assertEqual(self._events("csrf").count(), 1)            # 1 分鐘內重複只記一次
+
+    def test_disallowed_host_recorded(self):
+        resp = self.client.get("/accounts/login/", HTTP_HOST="evil.example")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("evil.example", self._events("host").get().detail)
+
+    def test_permission_denied_recorded(self):
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(reverse("price_list")).status_code, 403)
+        e = self._events("denied").get()
+        self.assertEqual(e.username, "sec_viewer")
+        self.assertEqual(e.path, reverse("price_list"))
+
+    def test_lock_recorded(self):
+        for _ in range(5):
+            self.client.post(reverse("login"), {"username": "sec_viewer", "password": "wrong"})
+        self.assertEqual(self._events("locked").get().username, "sec_viewer")
+        self.client.post(reverse("login"), {"username": "sec_viewer", "password": self.pw})
+        self.assertEqual(self._events("locked_try").get().username, "sec_viewer")
+
+    def test_normal_use_records_nothing(self):
+        from .models import SecurityEvent
+        self.client.post(reverse("login"), {"username": "sec_viewer", "password": self.pw})
+        self.client.get(reverse("calculator"))
+        self.assertFalse(SecurityEvent.objects.exists())
+
+    def test_admin_page(self):
+        self.client.force_login(self.viewer)
+        self.client.get(reverse("price_list"))
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("admin:estimator_securityevent_changelist"))
+        self.assertContains(resp, "sec_viewer")
+        self.assertContains(resp, "權限不足")
+
+
+# ---------- 使用紀錄 ----------
+
+@override_settings(FB_DEFAULT_LANGUAGE="zh-hant")
+class ActivityLogTests(TestCase):
+    pw = "Correct-Horse-42"
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_data", verbosity=0)
+        cls.viewer = User.objects.create_user("act_viewer", password=cls.pw)
+        cls.manager = User.objects.create_user("act_manager", password=cls.pw)
+        cls.manager.groups.add(Group.objects.get(name="價錢管理員"))
+        cls.admin = User.objects.create_user("act_admin", password=cls.pw, is_staff=True, is_superuser=True)
+
+    def _logs(self, action):
+        from .models import ActivityLog
+        return ActivityLog.objects.filter(action=action)
+
+    def test_login_logout_and_failure(self):
+        ip = {"HTTP_X_FORWARDED_FOR": "192.168.0.35"}
+        self.client.post(reverse("login"), {"username": "act_viewer", "password": "wrong"}, **ip)
+        failed = self._logs("login_failed").get()
+        self.assertEqual((failed.username, failed.ip), ("act_viewer", "192.168.0.35"))
+        self.assertNotIn("wrong", failed.detail)                          # 密碼不會被記錄
+        self.client.post(reverse("login"), {"username": "act_viewer", "password": self.pw}, **ip)
+        self.assertEqual(self._logs("login").get().ip, "192.168.0.35")
+        self.client.post(reverse("logout"), **ip)
+        self.assertEqual(self._logs("logout").get().username, "act_viewer")
+
+    def test_calculation_recorded_but_not_plain_page(self):
+        self.client.force_login(self.viewer)
+        self.client.get(reverse("calculator"))
+        self.assertFalse(self._logs("calc").exists())                     # 只打開頁面：不記錄
+        self.client.get(reverse("calculator"), {"brand": "PROMAT", "system_type": "1", "hours": "2", "area": "10"})
+        log = self._logs("calc").get()
+        self.assertEqual(log.username, "act_viewer")
+        self.assertIn("area=10", log.detail)
+
+    def test_price_view_recorded(self):
+        self.client.force_login(self.manager)
+        self.client.get(reverse("price_list"))
+        log = self._logs("view_price").get()
+        self.assertEqual((log.username, log.status), ("act_manager", 200))
+
+    def test_export_recorded(self):
+        self.client.force_login(self.viewer)
+        self.client.get(reverse("calculator_export"), {"brand": "PROMAT", "system_type": "1", "hours": "2"})
+        self.assertTrue(self._logs("export").filter(username="act_viewer").exists())
+
+    def test_admin_change_recorded(self):
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.contenttypes.models import ContentType
+        m = Material.objects.first()
+        LogEntry.objects.create(user=self.admin, content_type=ContentType.objects.get_for_model(Material),
+                                object_id=str(m.pk), object_repr=str(m), action_flag=CHANGE,
+                                change_message="[]")
+        log = self._logs("admin_change").get()
+        self.assertEqual(log.username, "act_admin")
+        self.assertIn(str(m), log.detail)
+
+    def test_admin_page_and_csv(self):
+        self.client.force_login(self.viewer)
+        self.client.get(reverse("price_list"))
+        self.client.force_login(self.admin)
+        resp = self.client.get(reverse("admin:estimator_activitylog_changelist"))
+        self.assertContains(resp, "act_viewer")
+        from .models import ActivityLog
+        ids = list(ActivityLog.objects.values_list("pk", flat=True))
+        resp = self.client.post(reverse("admin:estimator_activitylog_changelist"),
+                                {"action": "export_csv", "_selected_action": ids})
+        self.assertEqual(resp["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn("act_viewer", resp.content.decode("utf-8"))
